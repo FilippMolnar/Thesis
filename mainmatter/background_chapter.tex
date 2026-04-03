@@ -1,0 +1,78 @@
+%% ============================================================
+\chapter{Background}
+\label{ch:background}
+%% Target length: ~20 pages
+%% Largely draws from Jelle's Ch. 2 + 2.2 (cite, do not reproduce verbatim).
+%% Add a new section on Transformers / attention (2.3) which was not in Jelle.
+
+\section{Fluorescence Microscopy}
+\label{sec:fluorescence}
+%% 2.1.1  Diffraction Limit — Rayleigh criterion, eq. d_{xy} = 0.61 λ/NA
+%% 2.1.2  Point Spread Function (PSF) — Airy disk, Gaussian approximation
+%% 2.1.3  Deconvolution Problem — ill-posed inverse; eq. y_t = M_q(U(x_t)) + n_t
+%% 2.1.4  Super-Resolution Techniques — STED, SIM, SMLM, SOFI, SRRF;
+%%         table comparing resolution / frame count / hardware complexity
+%% 2.1.5  Live-Cell Imaging Constraints — sample health triangle
+
+\subsection{Diffraction Limit}
+\subsection{Point Spread Function}
+\subsection{The Deconvolution Problem}
+\subsection{Super-Resolution Techniques}
+\subsection{Live-Cell Imaging}
+\section{Super-Resolution Optical Fluctuation Imaging (SOFI)}
+\label{sec:sofi_bg}
+%% Move deeper SOFI theory here (from Jelle's Ch. 3) so it sits in background.
+%% 2.2.1  Auto-cumulant — G_2(r, τ), eq. 3.1, √n resolution gain
+%% 2.2.2  Cross-cumulant — virtual pixels, eq. 3.3-3.4, preferred for SOFI
+%% 2.2.3  Flattening and Linearisation — bSOFI, default vs. adaptive linearisation,
+%%         Lucy-Richardson deconvolution, Fourier reweighting
+
+\subsection{Auto-cumulant}
+\subsection{Cross-cumulant and Virtual Pixels}
+\subsection{Flattening and Linearisation}
+
+\section{Deep Learning for Image Super-Resolution}
+\label{sec:dl_bg}
+%% 2.3.1  Convolutional Neural Networks — feature maps, residual blocks
+%% 2.3.2  Recurrent Networks (GRU / ConvGRU) — summarise; refer to MISRGRU
+%% 2.3.3  Transformers and Self-Attention (NEW vs. Jelle's thesis)
+%%         - Attention mechanism: Q, K, V; scaled dot-product attention
+%%         - Multi-head self-attention
+%%         - Positional encodings
+%%         - Vision Transformers (ViT) — patch tokens
+%%         - Multi-Image SR with Transformers: TR-MISR (Arefin et al. 2020)
+%%           → learnable embedding token aggregating cross-frame features
+%% 2.3.4  Autoencoders and U-Net (brief; serves as baseline comparison)
+%% 2.3.5  Loss Functions in SR — spatial (L1, L2) vs. Fourier-domain losses
+
+\subsection{Convolutional Neural Networks}
+\subsection{Recurrent Neural Networks and ConvGRU}
+\subsection{Transformers and Self-Attention}
+\subsubsection{Scaled Dot-Product Attention}
+\subsubsection{Multi-Head Attention}
+\subsubsection{Vision Transformers}
+\subsubsection{TR-MISR: Transformer Multi-Image Super-Resolution}
+\subsection{Autoencoders and U-Net}
+\subsection{Loss Functions for Super-Resolution}
+
+
+Good question to flag early, examiners will notice if the background reads like a paraphrase of the prior thesis. Here's a concrete plan for each section: what to keep brief (cite Jelle), what to rewrite from a different angle, and what is genuinely new to your work.
+
+% §2.1 Fluorescence Microscopy — keep it short, reframe the angle
+% Jelle wrote this section to motivate SOFI in general. Your motivation is different: you need to establish why the temporal correlation structure of fluorophore blinking is the right signal for a sequence model to exploit. So rather than re-explaining the PSF from scratch, write one tight paragraph per subsection and use each one to build toward that point. The diffraction limit establishes why SR is needed; the PSF establishes what the model must undo; the deconvolution problem establishes why a learned approach is attractive. End §2.1 with a paragraph that explicitly frames the blinking time-series as an input sequence — this sets up §2.3 on sequence models naturally. You can cite Jelle (2024) for all the standard derivations and focus your prose on the new framing.
+% The super-resolution techniques table is worth keeping but restructure the columns. Jelle compared hardware complexity. Add a column for temporal structure exploitable by DL — SMLM has it (sparse localisation sequence), SOFI has it (dense correlated fluctuations), SIM does not. This makes the table yours and directly motivates why SOFI is a good match for MISR.
+
+% §2.2 SOFI — add two things Jelle did not cover
+% The cumulant theory (§2.2.1–2.2.3) is well-covered in Jelle and you should be brief here, citing him. What Jelle didn't need to discuss but you do:
+% First, add a subsection on the statistical view of blinking as a temporal sequence. SOFI computes cumulants over a window of T frames — but what does that window look like as a sequence? Plot or describe the autocorrelation structure of a single pixel's intensity trace. This is directly relevant to your thesis because you're asking whether a Transformer's self-attention (which has no explicit temporal ordering by default) can recover this correlation without the inductive bias of a recurrent network. Jelle never had to ask that question.
+% Second, add a short subsection on the frame-count vs. quality trade-off as a function. Jelle showed empirically that 20 frames is the sweet spot for MISRGRU. You should present this as a prior result and ask whether the same threshold holds for a Transformer, and why it might differ (attention can, in principle, weight all N frames simultaneously rather than forgetting early ones). This paragraph bridges §2.2 directly into §2.3.
+
+% §2.3 Deep Learning — this is your main original contribution to the background
+% This section is almost entirely new relative to Jelle. Be generous here. Jelle covered CNNs, GRU/LSTM, autoencoders, and U-Net. You need all of that plus a substantial Transformers section. Some concrete guidance:
+% For §2.3.2 ConvGRU, write this as a limitation analysis, not just a description. What does sequential hidden-state processing mean for parallelism? What does the update gate forget? Why might early frames (which contain useful blinking events) be underweighted by the time the GRU processes frame 20? This motivates the Transformer without dismissing the GRU — the GRU is your main baseline.
+% For §2.3.3 Transformers, structure it as a progression: the attention mechanism → multi-head attention → ViT patch tokens → TR-MISR's specific innovation (the learnable embedding token). The embedding token is the conceptual centrepiece of your thesis — spend a full page on it. Explain it intuitively: rather than summarising N frames by averaging their hidden states (as the GAP layer does in MISRGRU), the embedding token learns to ask a question of all N frames simultaneously via attention. That is a fundamentally different inductive bias, and the thesis is about whether that difference matters for SOFI.
+% Also add a paragraph on positional encoding choices — TR-MISR processes frames as an unordered set (no temporal index), which differs from a video Transformer that uses temporal position embeddings. Is the order of the 20 input frames meaningful for SOFI? Probably not (blinking is stationary), but this is worth one paragraph explicitly justifying that design choice rather than leaving it implicit.
+% For §2.3.5 Loss Functions, Jelle covered Fourier loss well. What you can add is a brief discussion of frequency-domain interpretability for SOFI specifically: the SOFI cross-cumulant concentrates its SR information above the Nyquist frequency of the acquisition grid, which means a loss that operates in Fourier space directly penalises exactly the frequency band you care about. This is a stronger justification than Jelle gave and ties the loss function choice back to SOFI physics rather than just SR in general.
+
+% One structural change to consider
+% Move §2.2 (SOFI theory) after §2.3.1–2.3.2 (CNNs and GRUs), placing it just before §2.3.3 (Transformers). The logical flow then becomes: microscopy problem → classical SR techniques → what SOFI computes and why it has temporal structure → recurrent models for temporal data → their limitations → Transformers as an alternative. That sequencing is more motivated than presenting SOFI theory before the reader knows why temporal structure matters for the model choice.

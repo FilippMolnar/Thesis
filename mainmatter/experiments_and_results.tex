@@ -1,0 +1,85 @@
+%% ============================================================
+\chapter{Experiments and Results}
+\label{ch:results}
+%% Target length: ~25 pages (main results chapter, formatted as manuscript)
+%% Can be structured as a self-contained paper following Nature Methods style
+%% (as Jelle did in Ch. 6), or as conventional subsections.
+%% Recommend conventional subsections for the thesis; paper can be appendix.
+
+\section{Evaluation Metrics}
+\label{sec:metrics}
+%% PSNR, SSIM — standard; note limitations (background pixel dominance).
+%% Decorrelation analysis (Descloux et al. 2019) — spatial resolution estimate.
+%% Re-scaled Pearson Coefficient (RSP) via SQUIRREL (Culley et al. 2018).
+%% Fourier Ring Correlation (FRC/RSP) — new in your pipeline (metrics.py).
+%% TPR / TNR after Li thresholding (Appendix B from Jelle, cited).
+
+\section{Architecture Comparison: TRNet vs. SOFI-MISRGRU}
+\label{sec:arch_compare}
+%% Primary research question (Q1).
+%% Fixed experimental conditions: 20 frames, 3000 training samples, 200 epochs.
+%% Metrics: spatial resolution, Pearson, RSP, TPR, TNR, parameter count.
+%% Qualitative figure: widefield | SOFI | MISRGRU | TRNet | GT at 3 SNR levels.
+%% Key finding: [fill in after experiments].
+%% Reference figure: TR-MISR architecture comparison plot from repo /figures/.
+
+\section{Decoder Ablation: PixelShuffle vs. ConvTranspose2d}
+\label{sec:decoder_ablation}
+%% Research question Q2.
+%% Compare TRNet (PixelShuffle + crop) vs. TRNet_deconv (ConvTranspose2d).
+%% Metrics focused on edge sharpness and output size correctness.
+%% Show intensity distribution plots (plot_intensity_distribution.py output).
+
+\section{Loss Function Comparison}
+\label{sec:loss_compare}
+%% Research question Q3.
+%% Four conditions: L1, Fourier, L1_Fourier, Composite.
+%% Reference figure: Loss function comparison plot from repo /figures/.
+%% Replicate key finding from Jelle (Fourier outperforms L1 in TPR / resolution)
+%% and extend: does L1_Fourier composite offer best of both?
+
+\section{Learning Rate Scheduler Strategy}
+\label{sec:lr_strategy}
+%% Three strategies: ReduceLROnPlateau / CosineAnnealing / Manual.
+%% Reference figure: Strategy comparison plot from repo /figures/.
+%% Convergence curves, final metric comparison.
+
+\section{Training Set Size Effect}
+\label{sec:dataset_size}
+%% 500 / 1000 / 3000 / 4000 / 5000 samples × 200 epochs (or 24h cap).
+%% Reference figure: Dataset size effect plot from repo /figures/.
+%% Diminishing returns threshold — practical guidance for future users.
+
+\section{TRNet\_improved: FlashAttention and CrossAttentionAggregator}
+\label{sec:improved}
+%% Research question Q1 extended.
+%% Does more sophisticated attention aggregation improve quality?
+%% Computational cost vs. performance table.
+%% Memory usage from benchmark_inference.py.
+
+\section{Reproducing SOFI-MISRGRU as Baseline}
+\label{sec:misrgru_repro}
+%% Confirm reproduction of Jelle's results within expected variance.
+%% Reference figure: Reproducing SOFI-MISRGRU plot from repo /figures/.
+%% Important for establishing that TRNet comparison is fair.
+
+\section{Inference Speed and Latency}
+\label{sec:latency}
+%% Research question Q4.
+%% baseline vs. TRT-optimised latency for 128×128, 256×256, 512×512 inputs.
+%% Reference figure: Speed comparison (TRT) plot from repo /figures/.
+%% Compare with MISRGRU latency and SOFI (20 frames).
+%% Real-time fps at N=100 fps camera for each frame size.
+
+\section{Transfer to Real Microscopy Data}
+\label{sec:real_results}
+%% Train on synthetic, fine-tune on 6× microtubule sets.
+%% Compare TRNet vs. MISRGRU on real data (RSP, decorrelation analysis).
+%% Qualitative figure at multiple magnifications.
+
+\section{Streaming MISRGRU (Preliminary)}
+\label{sec:streaming}
+%% N-input → N-output using ConvGRU hidden state.
+%% Current status: trains with same target for all input frames.
+%% Latency: stream_viewer.py demo.
+%% Limitations and future directions.

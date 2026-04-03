@@ -1,0 +1,36 @@
+%% ============================================================
+\chapter{Discussion}
+\label{ch:discussion}
+%% Target length: ~8 pages
+
+\section{Transformer vs. Recurrent Fusion for SOFI}
+%% Interpret architectural comparison results.
+%% Advantages of parallel attention: richer cross-frame blinking correlation?
+%% Or: does the ConvGRU's inductive bias (spatial locality) suit microscopy better?
+%% Discuss learnable embedding token: what does it learn?
+
+\section{Fourier-Domain Loss for Super-Resolution}
+%% Confirm / extend Jelle's finding.
+%% Composite loss: worthwhile complexity?
+
+\section{Sensitivity to Background Artefacts}
+%% Critical limitation identified by Jelle; does the Transformer model share it?
+%% Impact of background subtraction pre-processing step.
+
+\section{Practical Constraints and Data Scarcity}
+%% Small real-data regime (≥4 measurements); augmentation strategy.
+%% Training set size threshold: diminishing returns.
+%% Pre-training on synthetic data as foundation.
+
+\section{Real-Time Feasibility}
+%% Achieved fps vs. Jelle's 4.85 fps benchmark.
+%% TensorRT: degradation vs. baseline model (I.2 from Jelle).
+%% Bottleneck: window of N frames; many-to-many architecture would resolve this.
+
+\section{Limitations and Future Work}
+%% 1. Live-cell experiment validation (not conducted in this thesis).
+%% 2. Many-to-many (streaming) architecture for true single-frame temporal res.
+%% 3. Higher-order SOFI (n > 2) with adapted decoder.
+%% 4. Self-supervised or few-shot adaptation to new cell types.
+%% 5. Composite SSIM loss (marked TODO in codebase).
+%% 6. FlashAttention scaling: larger patch size / more frames.

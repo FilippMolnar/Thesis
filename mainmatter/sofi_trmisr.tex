@@ -1,0 +1,132 @@
+%% ============================================================
+\chapter{Method: SOFI-TR-MISR}
+\label{ch:method}
+%% Target length: ~15 pages
+%% Core technical contribution chapter.
+
+\section{Problem Formulation}
+\label{sec:problem}
+%% Multi-image SR for SOFI:
+%% \hat{Y} = f^γ_{θ,α,β}({l_1, ..., l_N})
+%% Inputs: N LR fluorescence frames l_i ∈ R^{1×H×W}
+%% Output: 2nd-order SR image \hat{Y} ∈ R^{1×γH×γW}, γ ≈ 1.984
+%% Key challenge: γ is non-integer (2n-7 for n=2 SOFI) → not a power-of-2 upscale
+
+\section{Overall Architecture}
+\label{sec:architecture}
+%% Three-stage pipeline figure (replicate Fig. 4.1 from Jelle, updated for TRNet):
+%%   Encoder_θ → Transformer Fusion_α → Decoder_β
+%% Compare side-by-side with MISRGRU: ConvGRU replaces transformer.
+%% Table: parameter count for TRNet vs MISRGRU vs U-Net.
+
+\section{Encoder}
+\label{sec:encoder}
+%% Shared-weight encoder (identical to MISRGRU baseline for fair comparison):
+%% - 2× Conv2d + 2× ResBlock, 3×3 kernels, 24 channels, PReLU
+%% - Output: r_i ∈ R^{C×H×W}, applied to each of the N input frames
+%% Note: single-channel input adaptation from original TR-MISR (RGB → grey).
+
+\section{Transformer Fusion}
+\label{sec:fusion}
+%% Core innovation chapter section — contrast with ConvGRU.
+%%
+%% 3.4.1  Learnable Embedding Token
+%%         - Aggregates cross-frame information via MSA
+%%         - Conceptually: a "summary token" that attends to all N frame tokens
+%%         - Equation: embedding token e_0; updated as e^{(l+1)} = Attn([e^l, r_1, ..., r_N])
+%%
+%% 3.4.2  Multi-Head Self-Attention across Frames
+%%         - Input: flattened patch tokens from all N frames + embedding token
+%%         - Attention: A = softmax(QK^T / √d_k) V
+%%         - Number of heads, depth (from config.json): summarise sweep
+%%
+%% 3.4.3  TRNet_improved Variants
+%%         - FlashAttention: IO-aware exact attention (memory-efficient)
+%%         - CrossAttentionAggregator: embedding token cross-attends to frame tokens
+%%         - Comparison rationale: does more sophisticated aggregation help?
+
+\subsection{Learnable Embedding Token}
+\subsection{Multi-Head Self-Attention across Frames}
+\subsection{Architecture Variants}
+\subsubsection{TRNet (baseline Transformer)}
+\subsubsection{TRNet\_deconv (ConvTranspose2d decoder)}
+\subsubsection{TRNet\_improved (FlashAttention + CrossAttentionAggregator)}
+
+\section{Decoder}
+\label{sec:decoder}
+%% Key modification from original TR-MISR (PROBA-V 3× PixelShuffle):
+%% - SOFI requires exact 2n-7 output size (non-integer γ for 2nd order)
+%% - Two strategies compared:
+%%   (a) PixelShuffle 2× + centre-crop to 2n-7
+%%   (b) ConvTranspose2d — variable stride to target the exact output size
+%% - 2× Conv + PReLU + 1×1 Conv projection to 1 output channel
+
+\section{Loss Functions}
+\label{sec:loss}
+%% Adopted from Jelle (Fuoli et al. 2021) plus extensions:
+%% L_F = L_{F_A} + L_{F_∠}   (Fourier amplitude + phase)
+%% Additional variants tested:
+%%   - L1 (spatial MAE)
+%%   - L1_Fourier (combined)
+%%   - Composite (SSIM component — TODO note from README acknowledged)
+%% Explain why Fourier loss favoured for SR: missing HF above Nyquist
+%% cannot be separated in spatial domain.
+
+\section{Training Procedure}
+\label{sec:training}
+%% Adam, η=0.001, β=(0.9, 0.999), Xavier init
+%% Three LR scheduler strategies:
+%%   0 = ReduceLROnPlateau
+%%   1 = CosineAnnealing
+%%   2 = Manual (step decay)
+%% Early stopping: 400 epochs, patience 10
+%% Two LR groups: lr_coder (encoder/decoder), lr_transformer (lower)
+%% Batch size, GPU: RTX 3090 / DelftBlue A100
+%% Pre-processing: per-sample normalisation (--norm flag), on/off ablation
+
+\section{Inference Optimisation}
+\label{sec:inference}
+%% TensorRT: layer fusion, INT8/FP16 precision calibration
+%% Real-time formula: R_{real-time} = 1 / (W/N + T_{latency})
+%% Streaming variant: rolling window of N frames → 1 SR output per new frame
+
+
+%% ============================================================
+\chapter{Datasets}
+\label{ch:datasets}
+%% Target length: ~8 pages
+%% Largely follows Jelle Ch. 5; note differences in data format (.pt tensors).
+
+\section{Synthetic Data}
+\label{sec:synthetic}
+%% 4.1.1  SOFI simulation pipeline (GrussmayerLab/Sofi_Simulations)
+%%         - sCMOS noise model (Willy FPS_100 camera)
+%%         - Physical microtubule model (Shariff et al. 2010)
+%%         - Parameter table (Table 5.1–5.2 from Jelle, reproduced/updated)
+%%
+%% 4.1.2  SOFI package (second-order cross-cumulant targets)
+%%         - Adaptive linearisation preferred (fewer background artefacts)
+%%         - Table 5.3: SOFI tool settings
+%%
+%% 4.1.3  Pre-processing and Storage
+%%         - Converted to PyTorch .pt tensors (preprocess_pt_dataset.py)
+%%         - Cropped: 64×64 LR patches → 121×121 HR targets
+%%         - 80/20 random split (vs. directory-based in original TR-MISR)
+%%         - Training sizes tested: 500, 1000, 3000, 4000, 5000 samples
+
+\subsection{Simulation Parameters}
+\subsection{SOFI Processing}
+\subsection{Pre-processing Pipeline and Data Format}
+\subsection{Training Set Size Experiments}
+
+\section{Real Microscopy Data}
+\label{sec:real_data}
+%% Reuse Jelle's datasets (microtubules + mitochondria); identical acquisition.
+%% Note any differences in cropping strategy or patch size vs. Jelle's 128×128.
+%% Minimum dataset requirements (≥4 fixed-cell sets, ≥3000 frames, FOV ≥350×350).
+%% Table: microtubule SOFI settings (Table 5.4), mitochondria settings (Table 5.5).
+%% Background subtraction (Tekpinar et al.) for mitochondria.
+
+\subsection{Fixed-Cell Microtubules}
+\subsection{Fixed-Cell Mitochondria}
+\subsection{Data Augmentation}
