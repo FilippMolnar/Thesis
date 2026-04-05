@@ -47,6 +47,70 @@ latexmk -c
 
 ---
 
+## Thesis Structure and Writing Guidance
+
+### Reference Works
+
+Two papers anchor the narrative and should be cited throughout:
+
+- **Jelle Komen (2024) MSc thesis** — `papers/Jelle-Accelerating_SOFI_with_Deep_Learning_Enabling_Real_Time_Live_Cell_Imaging.pdf`
+  The direct predecessor. Introduced MISRGRU (ConvGRU fusion) for SOFI acceleration. Achieved 4.85 fps real-time SR from 20 frames, 400-fold latency reduction vs. SOFI. Structure: Intro → Background → SOFI Theory → Architecture → Datasets → Results (manuscript style). This thesis **builds upon** Jelle's and must clearly position itself relative to it.
+
+- **RESURF paper (Nature Comms preprint)** — `papers/Fast_SOFI_naturecomm-1.pdf`
+  The published journal paper from Jelle's thesis work (Tekpinar, Komen et al.). Establishes 8-frame model at 27 ms inference as the practical SOFI replacement. The key claim: 400-fold acceleration. Metrics used: decorrelation analysis (resolution), RSP (re-scaled Pearson correlation), RSE maps.
+
+### Narrative Arc
+
+The thesis argument flows as:
+
+> SOFI requires hundreds of frames (too slow for live cells) → Jelle showed GRU can reduce this to 8–20 frames at real-time speeds → **but GRU is sequential**: each frame must wait for the previous hidden state → **Transformers process all N frames in parallel via self-attention** → does this enable lower latency and/or better quality? → systematic comparison + TensorRT benchmarking answers this.
+
+The **differentiating contributions** vs. Jelle that must be explicit:
+1. Transformer fusion module (TR-MISR) vs. ConvGRU — parallel processing hypothesis
+2. Decoder comparison: PixelShuffle+crop vs. ConvTranspose2d for non-integer 2n−7 upscaling
+3. Fourier-domain loss ablation extended beyond Jelle's L1 vs. Fourier
+4. TensorRT inference benchmarking (Jelle measured latency; you optimize it)
+5. Streaming MISRGRU variant (N-in → N-out rolling window for truly continuous imaging)
+
+### Chapter Structure
+
+| Chapter | File | Target | Status |
+|---------|------|--------|--------|
+| 1. Introduction | `introduction.tex` | ~4 pages | Draft with TODOs |
+| 2. Background | `background_chapter.tex` | ~15 pages | — |
+| 3. Method: SOFI-TR-MISR | `sofi_trmisr.tex` | ~15 pages | Skeleton |
+| 4. Datasets | `sofi_trmisr.tex` (§4+) | ~8 pages | Skeleton |
+| 5. Experiments & Results | `experiments_and_results.tex` | ~25 pages | Skeleton |
+| 6. Discussion | `discussion.tex` | ~5 pages | — |
+| 7. Conclusion | `conclusion.tex` | ~3 pages | — |
+
+### Key Structural Decisions (diverging from Jelle)
+
+**Background chapter**: Jelle (Ch. 2) covers fluorescence microscopy + deep learning; Ch. 3 covers SOFI theory separately. Your `background_chapter.tex` should similarly keep SOFI theory (auto-cumulant, cross-cumulant, linearization, 2n−7 formula) distinct from the DL background — readers need the math before understanding why 2n−7 is non-integer and why that makes decoding hard.
+
+**Methods chapter** (`sofi_trmisr.tex`): Follow Jelle's Ch. 4 structure (Encoder → Fusion → Decoder → Loss) but add a side-by-side comparison table of MISRGRU vs. TRNet architecture (parameter count, inference mode: sequential vs. parallel).
+
+**Results ordering** (follows RESURF paper's logic):
+1. Reproduce MISRGRU baseline first (§ Reproducing SOFI-MISRGRU) — establishes fair comparison ground
+2. Architecture comparison (TRNet variants vs. MISRGRU) — answers RQ1
+3. Decoder ablation — answers RQ2
+4. Loss function ablation — answers RQ3 (Fourier outperformed L1 in RESURF too; confirm and extend)
+5. Inference latency + TensorRT — answers RQ4 (the real-time claim)
+6. Transfer to real data — generalisation (mirrors RESURF §Transfer learning)
+7. Streaming MISRGRU — forward-looking, positions future work
+
+**Evaluation metrics** (mirror RESURF exactly for comparability):
+- Decorrelation analysis → spatial resolution estimate
+- RSP (re-scaled Pearson correlation) — RESURF's primary metric for structural fidelity
+- PSNR/SSIM — standard; note background-pixel dominance caveat (Jelle Appendix B)
+- RSE maps — qualitative error visualization
+
+### What NOT to repeat from Jelle
+
+Do not re-derive SOFI cumulant theory at length — cite Jelle Ch. 3 and give the 2-page summary. Cite Jelle for the simulation pipeline and dataset parameters; only describe your differences (patch size 64×64 vs. 128×128, `.pt` tensor format, training set sizes).
+
+---
+
 ## TR-MISR Codebase (`../TR-MISR/`)
 
 ### Setup

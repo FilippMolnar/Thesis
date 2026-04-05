@@ -1,8 +1,16 @@
 %% ============================================================
-\chapter{Method: SOFI-TR-MISR}
+\chapter{Methods}
 \label{ch:method}
 %% Target length: ~15 pages
 %% Core technical contribution chapter.
+Our goal is to reconstruct low resolution movies into super-resolved sequences with two focuses: achieving the 
+similar spatial resolution as the original high-resolution images reconstructed with 2nd order SOFI and
+reducing the latency of the algorithm, enabling real-time processing, allowing live feedback during microscopy experiments.
+First, we apply the TR-MISR \ref{}\todo{add citation} Transformer-based architecture ranked first on 
+Multi-Frame Super-Resolution on PROBA-V \ref{https://kelvins.esa.int/proba-v-super-resolution/home/}, 
+to the microscopy domain. We compare it to the RESURF \cite{resurf2024}.
+Secondly, we design a streaming variant of the RESURF architecture to enable real-time processing, 
+and evaluate its performance against it.
 
 \section{Problem Formulation}
 \label{sec:problem}
@@ -11,6 +19,39 @@
 %% Inputs: N LR fluorescence frames l_i ∈ R^{1×H×W}
 %% Output: 2nd-order SR image \hat{Y} ∈ R^{1×γH×γW}, γ ≈ 1.984
 %% Key challenge: γ is non-integer (2n-7 for n=2 SOFI) → not a power-of-2 upscale
+We define two problem settings: the first is the multi-image super-resolution (MISR) task, which goal is to 
+produce a single high-resolution image from a sequence of low-resolution frames defined as $\{\mathbf{l}_1, \mathbf{l}_2, \ldots, \mathbf{l}_N\}$. 
+The second is video super-resolution (VSR), which extends the first by producing a super-resolved image for 
+every frame in the movie, effectively reconstructing a super-resolved video. The high-resolution output is 
+defined as $\mathbf{Y}_t \in \mathbb{R}^{C \times \gamma H \times \gamma W}$ for each time step $t$, and produced from the sequence of low-resolution frames up 
+to that time step, $\{\mathbf{l}_1, \mathbf{l}_2, \ldots, \mathbf{l}_t\} \in \mathbb{R}^{C \times H \times W}$, 
+where $C$ is the number of channels (in our case 1 as the images are grayscale), W and H are the width and height dimensions of 
+low-resolution frames and $\gamma$ is the upscaling factor.
+
+For second-order SOFI, the high-resolved target has spatial dimensions of $(2H - 7) \times (2W - 7)$. This is 
+due to the nature of SOFI reconstruction algorithm. Thus our models need to be designed to produce an output 
+of this specific size, which is not a standard 2 times upscale. 
+
+The streaming variant of RESURF architecture, described in Section~\ref{sec:streaming_arch}, aims 
+to solve the VSR task.
+
+
+% The model is formulated as a function composition:
+% \begin{equation}
+%   \hat{\mathbf{Y}} = \mathcal{D}_\beta \circ \mathcal{F}_\alpha \circ \mathcal{E}_\theta(\{\mathbf{l}_1, \ldots, \mathbf{l}_N\}),
+% \end{equation}
+% where $\mathcal{E}_\theta$, $\mathcal{F}_\alpha$, and $\mathcal{D}_\beta$ are the encoder, fusion, and decoder modules with trainable parameters $\theta$, $\alpha$, and $\beta$ respectively. Each module serves a distinct role:
+
+% \begin{enumerate}
+%   \item \textbf{Encoder} $\mathcal{E}_\theta$: extracts spatial features and structural information from each of the $N$ input frames independently, producing encoded representations $\{\mathbf{r}_1, \ldots, \mathbf{r}_N\}$.
+  
+%   \item \textbf{Fusion} $\mathcal{F}_\alpha$: aggregates cross-frame information by identifying correlations in the blinking statistics across all $N$ frames, producing a single latent vector $\mathbf{z}$ that summarises the multi-frame context.
+  
+%   \item \textbf{Decoder} $\mathcal{D}_\beta$: upsamples the fused representation to the target resolution $(2H - 7) \times (2W - 7)$ and produces the final SR image $\hat{\mathbf{Y}}$.
+% \end{enumerate}
+
+% The following sections detail each module and the key design choices that differentiate this work from prior approaches.
+
 
 \section{Overall Architecture}
 \label{sec:architecture}
@@ -21,10 +62,24 @@
 
 \section{Encoder}
 \label{sec:encoder}
-%% Shared-weight encoder (identical to MISRGRU baseline for fair comparison):
-%% - 2× Conv2d + 2× ResBlock, 3×3 kernels, 24 channels, PReLU
-%% - Output: r_i ∈ R^{C×H×W}, applied to each of the N input frames
-%% Note: single-channel input adaptation from original TR-MISR (RGB → grey).
+
+Both TR-MISR\cite{TR-MISR-original} and MISRGRU\cite{MISRGRU-original,resurf2024} use an identical encoder, which enables a controlled comparison of fusion strategies. 
+The encoder maps each low-resolution input frame $\mathbf{l}_i \in \mathbb{R}^{1 \times H \times W}$ 
+independently to a feature map $\mathbf{r}_i \in \mathbb{R}^{C \times H \times W}$, 
+where $C = 24$ is the number of feature channels and $H = W = 64$ for the patch size used in this work. 
+Because the encoder is applied frame-by-frame, the full encoding of $N$ input frames is:
+\begin{equation}
+  (\mathbf{r}_i)_{i=1}^{N} = \mathcal{E}_\theta\!\left((\mathbf{l}_i)_{i=1}^{N}\right).
+  \label{eq:encoder}
+\end{equation}
+
+The encoder architectures follow the designs from the original work of TR-MISR\cite{TR-MISR-original} and 
+MISRGRU\cite{MISRGRU-original,resurf2024} and consist of three stages. 
+An initial convolutional layer, followed by two residual blocks consisting of two convolutional layers each with parametric ReLU 
+(PReLU)\todo[inline]{cite}\cite{}. Lastly a final convolutional layer that produces the output feature map.
+3x3 kernels with same padding are used throughout, preserving the spatial dimensions of the input.
+The original TR-MISR encoder for the PROBA-V satellite dataset accepted two input channels (near-infrared and red bands). 
+For the single-channel fluorescence microscopy domain, the input is reduced to one channel.
 
 \section{Transformer Fusion}
 \label{sec:fusion}
