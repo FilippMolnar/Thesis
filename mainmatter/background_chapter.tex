@@ -2,77 +2,272 @@
 \chapter{Background}
 \label{ch:background}
 %% Target length: ~20 pages
-%% Largely draws from Jelle's Ch. 2 + 2.2 (cite, do not reproduce verbatim).
-%% Add a new section on Transformers / attention (2.3) which was not in Jelle.
 
 \section{Fluorescence Microscopy}
 \label{sec:fluorescence}
-%% 2.1.1  Diffraction Limit — Rayleigh criterion, eq. d_{xy} = 0.61 λ/NA
-%% 2.1.2  Point Spread Function (PSF) — Airy disk, Gaussian approximation
-%% 2.1.3  Deconvolution Problem — ill-posed inverse; eq. y_t = M_q(U(x_t)) + n_t
-%% 2.1.4  Super-Resolution Techniques — STED, SIM, SMLM, SOFI, SRRF;
-%%         table comparing resolution / frame count / hardware complexity
-%% 2.1.5  Live-Cell Imaging Constraints — sample health triangle
+
+Fluorescence microscopy enables the visualisation of biological structures at the 
+molecular level by labelling specific targets with fluorescent molecules: \emph{fluorophores}.
+They emit light upon excitation. 
+A fluorophore absorbs a photon at the excitation wavelength and re-emits a 
+lower-energy (longer-wavelength) photon; 
+a dichroic filter separates the emitted fluorescence from the excitation light, 
+so only signal from labelled structures reaches the detector. 
+This selectivity, combined with single-molecule sensitivity, makes fluorescence 
+microscopy the tool of choice for live-cell imaging of subcellular dynamics. 
+The following subsections introduce the physical principles that govern image 
+formation and establish why a temporal sequence of frames 
+rather than a single snapshot is necessary for high-resolution fluorescence imaging.
 
 \subsection{Diffraction Limit}
+\label{subsec:diffraction}
+
+The spatial resolution of any far-field optical microscope is fundamentally bounded by the wave nature of 
+light. When a point source of light passes through a circular aperture (the objective lens), 
+it produces an \emph{Airy disk} diffraction pattern rather than a perfect point image. 
+Lord Rayleigh formalised this as a resolution criterion: two point sources can just be resolved when the 
+principal maximum of one pattern coincides with the first minimum of the other~\cite{jelle2024}. 
+In the lateral plane this gives the minimum resolvable distance:
+\begin{equation}
+    d_{xy} = 0.61\,\frac{\lambda}{\mathrm{NA}},
+    \label{eq:rayleigh}
+\end{equation}
+where $\lambda$ is the emission wavelength and $\mathrm{NA} = n\sin\theta$ is the numerical aperture of the objective, determined by the refractive index $n$ of the immersion medium and the half-angle $\theta$ of the light cone collected by the lens. For typical visible-light fluorescence ($\lambda \approx 500$--$700\,\mathrm{nm}$, $\mathrm{NA} \approx 1.4$), this yields $d_{xy} \approx 200$--$300\,\mathrm{nm}$.
+
+Many biologically relevant structures are far smaller: microtubules have a diameter of $\approx 25\,\mathrm{nm}$, mitochondria membranes are $\approx 10\,\mathrm{nm}$ thick, and individual protein complexes are 5--20\,nm in size. These structures are entirely hidden within the diffraction blur. Overcoming the diffraction limit is therefore not merely an imaging improvement — it is a prerequisite for visualising the molecular machinery of the cell.
+
 \subsection{Point Spread Function}
+\label{subsec:psf}
+
+The complete response of an optical system to a single point emitter is described by the \emph{Point Spread Function} (PSF), denoted $v(r)$, where $r$ is the spatial coordinate. In the focal plane the PSF approximates an Airy disk; a Gaussian approximation $v(r) \propto \exp(-r^2/2\sigma^2)$ is commonly used for analytical and computational purposes, with $\sigma \approx d_{xy}/2.35$~\cite{jelle2024}.
+
+Because a biological sample contains many emitters, the observed image $y(r,t)$ at position $r$ and time $t$ is the convolution of the true fluorophore density $x(r,t)$ with the PSF:
+\begin{equation}
+    y(r,t) = x(r,t) * v(r) = \sum_k v(r - r_k)\,\epsilon_k\,s_k(t),
+    \label{eq:psf_conv}
+\end{equation}
+where the sum runs over all emitters $k$ at position $r_k$, $\epsilon_k$ is molecular brightness, and $s_k(t)$ is the time-varying on/off state. Discretising to the camera pixel grid and adding Gaussian noise yields the full acquisition model (see~\cite{jelle2024} §2.1.3 for derivation):
+\begin{equation}
+    \mathbf{y}_t = M_q\!\left(U(\mathbf{x}_t)\right) + \mathbf{n}_t,
+    \label{eq:acquisition}
+\end{equation}
+where $U : \mathbb{R}^L \to \mathbb{R}^M$ is the PSF convolution operator, $M_q : \mathbb{R}^L \to \mathbb{R}^M$ is a downsampling operator, and $\mathbf{n}_t$ is additive Gaussian noise. Crucially, the PSF $v(r)$ is \emph{shared across all frames}: the same blur is applied to every time step $t$. This time-invariance means that the cross-frame correlation structure of the image sequence encodes the fluorophore blinking statistics — a fact that SOFI and deep learning both exploit.
+
 \subsection{The Deconvolution Problem}
+\label{subsec:deconv}
+
+Recovering the true image $\mathbf{x}_t$ from the observed $\mathbf{y}_t$ requires inverting the convolution in Eq.~\eqref{eq:acquisition} — the \emph{deconvolution problem}. This is ill-posed: in the frequency domain, $\hat{Y}(\omega) = \hat{H}(\omega)\hat{X}(\omega) + \hat{N}(\omega)$, so the naive inverse $\hat{X} = \hat{Y}/\hat{H}$ amplifies noise catastrophically at frequencies where $|\hat{H}(\omega)|$ is small (i.e., near and beyond the diffraction cut-off). Classical regularised methods — Wiener filtering, Lucy-Richardson deconvolution — stabilise the inversion but require accurate knowledge of the PSF and yield a single restored image per frame, exploiting no temporal information.
+
+A learned approach is attractive for two reasons. First, the mapping from $\{\mathbf{y}_t\}$ to an SR image can be learnt end-to-end from paired training data, bypassing explicit PSF estimation. Second, and more importantly, a model that processes \emph{multiple frames jointly} can exploit the temporal correlation structure of fluorophore blinking — structure that single-frame deconvolution is blind to. This is the central insight behind SOFI (§\ref{sec:sofi_bg}) and the deep-learning models discussed in §\ref{sec:dl_bg}.
+
 \subsection{Super-Resolution Techniques}
+\label{subsec:sr_techniques}
+
+Super-resolution (SR) microscopy techniques overcome the diffraction limit by different physical principles. Table~\ref{tab:sr_techniques} summarises the main families along a dimension that is novel relative to prior treatments~\cite{jelle2024}: whether the temporal structure of the acquired frames is exploitable by a deep-learning model.
+
+\begin{table}[htbp]
+\centering
+\caption{Comparison of super-resolution fluorescence microscopy techniques. The final column indicates whether the temporal frame sequence carries exploitable structure for a multi-frame deep learning model.}
+\label{tab:sr_techniques}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{>{\raggedright}p{2.8cm} >{\raggedright}p{2.4cm} >{\raggedright}p{1.5cm} >{\raggedright}p{2.8cm} p{4cm}}
+\hline
+\textbf{Technique} & \textbf{Resolution} & \textbf{Frames} & \textbf{Hardware} & \textbf{DL-exploitable temporal structure} \\
+\hline
+STED~\cite{sted1994}       & $<\!50\,\mathrm{nm}$   & Single & Depletion laser   & None (single-frame) \\[2pt]
+SIM~\cite{sim2000}         & $\approx120\,\mathrm{nm}$ & 9--15  & Patterned illum.  & Minimal (fixed pattern) \\[2pt]
+PALM/STORM~\cite{palm2006,storm2006} & 10--20\,nm & $10^5$--$10^6$ & Widefield & Sparse localisation sequence \\[2pt]
+SOFI~\cite{sofi2009}       & $\approx\!\sqrt{n}$-fold & 100--500 & Widefield & Dense correlated fluctuations \\[2pt]
+SRRF~\cite{srrf2016}       & $\approx\!60\,\mathrm{nm}$ & $\sim$100 & Widefield & Statistical, less structured \\
+\hline
+\end{tabular}
+\end{table}
+
+\textbf{Illumination-based methods.} STED microscopy~\cite{sted1994} uses a doughnut-shaped depletion beam to suppress emission outside the very centre of the PSF, shrinking the effective PSF to below 50\,nm. SIM~\cite{sim2000} illuminates the sample with patterned light to encode high-frequency structural information into the detectable bandwidth, doubling lateral resolution to $\approx$120\,nm. Both require specialised hardware and high illumination intensity, limiting their applicability to live, sensitive samples.
+
+\textbf{Single-molecule localisation microscopy (SMLM).} PALM~\cite{palm2006} and STORM~\cite{storm2006} stochastically activate sparse subsets of emitters so that individual molecules can be precisely localised by fitting the PSF. Repeating this over $10^5$--$10^6$ frames and accumulating localisations yields a super-resolved map with 10--20\,nm precision. The temporal sequence here is a sparse localisation stream; deep-learning approaches have been proposed for fast localisation but the frame count remains prohibitively large for real-time live-cell imaging.
+
+\textbf{Fluctuation-based methods.} SOFI~\cite{sofi2009} and SRRF~\cite{srrf2016} work with densely blinking fluorophores on standard widefield microscopes. Rather than localising individual molecules, they exploit the \emph{statistical correlation} of intensity fluctuations across the frame sequence. SOFI computes spatial cumulants of the blinking time-series to produce a SR image with $\sqrt{n}$-fold ($n$-th order) resolution improvement, extended to $n$-fold with deconvolution. SRRF assesses local radial symmetry at each frame to estimate emitter positions sub-pixel.
+
+
 \subsection{Live-Cell Imaging}
+\label{subsec:livecell}
+
+Live-cell fluorescence imaging faces a fundamental three-way trade-off between spatial resolution, temporal resolution, and sample health~\cite{jelle2024}. Higher resolution generally requires more photons (brighter illumination or more frames), which increases phototoxicity and photobleaching — both of which damage or kill the cell and destroy the fluorescent label. Temporal resolution (how rapidly frames are acquired) also competes directly with frame count: acquiring 500 frames at 40\,fps takes 12.5 seconds, during which fast cellular events — vesicle trafficking ($\sim$1\,$\mu$m/s), mitochondrial fusion, or cytoskeletal remodelling — may have substantially evolved or left the field of view.
+
+SOFI is advantaged among SR techniques in this trade-off: it operates at low illumination intensity (reducing phototoxicity) and on a standard widefield microscope (no specialised hardware). However, requiring 100--500 frames for a reliable cumulant estimate still imposes a temporal bottleneck of several seconds to minutes at typical camera frame rates. For tracking fast organelle dynamics, this is unacceptably slow. Reducing the required frame count to 8--20 while preserving SR quality is therefore the key engineering challenge — and the direct motivation for replacing the explicit cumulant computation with a learned deep-learning model~\cite{jelle2024,resurf2024}.
+
+%% ============================================================
 \section{Super-Resolution Optical Fluctuation Imaging (SOFI)}
 \label{sec:sofi_bg}
-%% Move deeper SOFI theory here (from Jelle's Ch. 3) so it sits in background.
-%% 2.2.1  Auto-cumulant — G_2(r, τ), eq. 3.1, √n resolution gain
-%% 2.2.2  Cross-cumulant — virtual pixels, eq. 3.3-3.4, preferred for SOFI
-%% 2.2.3  Flattening and Linearisation — bSOFI, default vs. adaptive linearisation,
-%%         Lucy-Richardson deconvolution, Fourier reweighting
+
+SOFI exploits the fact that fluorophores blink independently: at any time $t$, emitter $k$ is either in a bright (on) or dark (off) state with statistics that are uncorrelated across different emitters. This independence means that the time-averaged cross-correlation of two distinct pixels receives contributions only from emitters visible in both pixels simultaneously — i.e., emitters close enough to the lens that their PSF footprints overlap both pixel locations. The resolution improvement arises because the effective PSF of the cross-cumulant is narrower than that of the raw image. For a full derivation of the SOFI cumulant framework, including the role of the blinking model, Fourier reweighting, and the bSOFI balanced extension, see~\cite{sofi2009,jelle2024}. Here we summarise the key results needed to understand the $2H-7$ output size and the Fourier loss justification.
 
 \subsection{Auto-cumulant}
-\subsection{Cross-cumulant and Virtual Pixels}
-\subsection{Flattening and Linearisation}
+\label{subsec:autocumulant}
 
+Let $\delta y(r,t) = y(r,t) - \langle y(r,\cdot)\rangle$ denote the intensity fluctuation at pixel $r$ and time $t$. The second-order auto-cumulant (auto-correlation at lag $\tau$) is:
+\begin{equation}
+    G_2(r,\tau) = \langle \delta y(r,t+\tau)\,\delta y(r,t)\rangle
+    = \sum_k v^2(r - r_k)\,\epsilon_k^2\,w_{2,k}(\tau),
+    \label{eq:autocumulant}
+\end{equation}
+where $v(\cdot)$ is the PSF, $\epsilon_k$ is the molecular brightness of emitter $k$, and $w_{2,k}(\tau) = \langle \delta s_k(t+\tau)\,\delta s_k(t)\rangle$ encodes the blinking statistics. Because the PSF appears \emph{squared} in Eq.~\eqref{eq:autocumulant}, the effective PSF has a width of $\approx 1/\sqrt{2}$ times the original, yielding a $\sqrt{2}$ improvement in lateral resolution for second-order SOFI. More generally, the $n$-th order cumulant replaces $v^2$ with $v^n$, giving a $\sqrt{n}$-fold resolution improvement~\cite{sofi2009,jelle2024}.
+
+\subsection{Cross-cumulant and Virtual Pixels}
+\label{subsec:crosscumulant}
+
+The auto-cumulant evaluates the cumulant at a single pixel location. The \emph{cross-cumulant} generalises this to pairs of positions $r_1, r_2$:
+\begin{equation}
+    \kappa_2(r_1, r_2, \tau) = \langle \delta y(r_1, t+\tau)\,\delta y(r_2, t)\rangle
+    = \sum_k v(r_1 - r_k)\,v(r_2 - r_k)\,w_{2,k}(\tau).
+    \label{eq:crosscumulant}
+\end{equation}
+The cross-cumulant is non-zero only when emitter $k$ contributes to \emph{both} pixels $r_1$ and $r_2$ — i.e., only when their PSF footprints overlap. Evaluating $\kappa_2$ at a sub-pixel midpoint $\bar{r} = (r_1 + r_2)/2$ yields a super-resolved \emph{virtual pixel} at a position between the physical camera pixels, increasing the effective sampling density.
+
+Computing the second-order cross-cumulant over a $3\times 3$ neighbourhood of each pixel produces a raw output of $(2H-3)\times(2W-3)$ virtual pixels from an $H\times W$ input. After discarding edge pixels where the neighbourhood is incomplete, the usable output is $(2H-7)\times(2W-7)$~\cite{jelle2024}. For our 64\,$\times$\,64 low-resolution patches, the target is therefore 121\,$\times$\,121. This non-integer upscaling factor $\gamma = 121/64 \approx 1.89$ is the key constraint that the decoder architecture must satisfy; we discuss the two decoding strategies (PixelShuffle with crop vs. ConvTranspose2d) in Chapter~\ref{ch:method}.
+
+\subsection{Flattening and Linearisation}
+\label{subsec:flattening}
+
+Higher-order cumulants amplify brighter emitters non-linearly: emitter $k$ contributes with weight $\epsilon_k^n$ to the $n$-th order cumulant image. This brightness non-uniformity obscures dim emitters and makes quantitative interpretation difficult. \emph{Linearisation} (flattening) corrects for this by taking the $n$-th root:
+\begin{equation}
+    \bar{g}(r) = \hat{g}^{1/n}(r),
+    \label{eq:linearisation}
+\end{equation}
+where $\hat{g}$ is the raw cumulant image. An alternative is \emph{Fourier reweighting} (Richardson-Lucy deconvolution in the frequency domain), which can achieve a full $n$-fold resolution improvement rather than $\sqrt{n}$. We adopt \emph{adaptive linearisation} following~\cite{jelle2024,resurf2024}, which adjusts the exponent based on the estimated on-time ratio $\rho_\mathrm{on}$ of the emitters.
+
+\paragraph{SOFI as a temporal sequence.}
+
+From a machine learning perspective, the $T$ frames acquired at a single pixel form a time-series $\{y(r,t)\}_{t=1}^{T}$ whose autocorrelation structure encodes the emitter blinking statistics. Crucially, the blinking process is \emph{stationary}: the autocorrelation $G_2(r,\tau)$ depends only on the lag $\tau$, not on the absolute frame index. This means the $N$ input frames are \emph{exchangeable} — permuting them does not change the statistical information they collectively carry. A model that processes all $N$ frames simultaneously without imposing a temporal order is therefore not at an information-theoretic disadvantage compared to one that processes them sequentially. This observation is central to the design choice explored in this thesis: Transformer self-attention treats the frame sequence as an unordered set, which matches the SOFI data generating process; the GRU instead imposes a sequential ordering that the data do not require.
+
+\paragraph{Frame count vs.\ reconstruction quality.}
+
+\cite{jelle2024,resurf2024} showed empirically that MISRGRU achieves near-SOFI-quality reconstruction with as few as 8 frames, with diminishing returns beyond 20. The trade-off arises because each additional frame provides an incrementally better estimate of the autocorrelation, but also increases acquisition time and thereby reduces temporal resolution. Whether a Transformer — which attends to all $N$ frames simultaneously and can in principle weight each frame's contribution by its local signal quality — exhibits the same saturation threshold is one of the research questions we address in Chapter~\ref{ch:results}.
+
+%% ============================================================
 \section{Deep Learning for Image Super-Resolution}
 \label{sec:dl_bg}
-%% 2.3.1  Convolutional Neural Networks — feature maps, residual blocks
-%% 2.3.2  Recurrent Networks (GRU / ConvGRU) — summarise; refer to MISRGRU
-%% 2.3.3  Transformers and Self-Attention (NEW vs. Jelle's thesis)
-%%         - Attention mechanism: Q, K, V; scaled dot-product attention
-%%         - Multi-head self-attention
-%%         - Positional encodings
-%%         - Vision Transformers (ViT) — patch tokens
-%%         - Multi-Image SR with Transformers: TR-MISR (Arefin et al. 2020)
-%%           → learnable embedding token aggregating cross-frame features
-%% 2.3.4  Autoencoders and U-Net (brief; serves as baseline comparison)
-%% 2.3.5  Loss Functions in SR — spatial (L1, L2) vs. Fourier-domain losses
+
+Deep learning approaches to SR replace explicit mathematical models of the image formation process with learnable functions trained end-to-end on paired low-resolution / high-resolution examples. For foundational material on artificial neural networks, backpropagation, convolutional networks, autoencoders, and U-Net, see~\cite{jelle2024} §2.2; the following subsections focus on the architectural building blocks most directly relevant to multi-frame SOFI SR.
 
 \subsection{Convolutional Neural Networks}
+\label{subsec:cnn}
+
+Convolutional Neural Networks (CNNs) learn local spatial features by convolving an input tensor with a bank of learnable filters. Because the same filter is applied at every spatial location, CNNs are translation equivariant and require far fewer parameters than fully connected networks for image data. In the SR context, CNNs are used as encoders (to extract frame-specific features) and decoders (to reconstruct the high-resolution output).
+
+A key building block in modern SR architectures is the \emph{residual block}~\cite{jelle2024}. Rather than learning the full mapping $\mathbf{y} = \mathcal{H}(\mathbf{x})$, a residual block learns only the \emph{residual} $\mathcal{F}(\mathbf{x}) = \mathcal{H}(\mathbf{x}) - \mathbf{x}$, so the output is:
+\begin{equation}
+    \mathbf{y} = \mathbf{x} + \mathcal{F}(\mathbf{x}),
+    \label{eq:residual}
+\end{equation}
+where $\mathcal{F}$ is typically a sequence of Conv $\to$ PReLU $\to$ Conv layers. The identity shortcut allows gradients to flow directly through the block during backpropagation, enabling training of deep networks without vanishing-gradient degradation. In our encoder (Chapter~\ref{ch:method}), stacked residual blocks process each of the $N$ low-resolution frames independently before the cross-frame fusion stage.
+
 \subsection{Recurrent Neural Networks and ConvGRU}
+\label{subsec:rnn}
+
+Recurrent Neural Networks (RNNs) process sequential data by maintaining a hidden state $\mathbf{h}_t$ that is updated at each step as a function of the current input and the previous state. This allows information from early frames to influence the processing of later frames — in principle enabling the network to aggregate temporal context over arbitrarily long sequences. In practice, vanilla RNNs suffer from vanishing gradients over long sequences, limiting their effective memory.
+
+The \emph{Gated Recurrent Unit} (GRU)~\cite{cho2014gru} addresses this with learned gating mechanisms. Given input $\mathbf{x}_t$ and previous hidden state $\mathbf{h}_{t-1}$, the GRU computes:
+\begin{align}
+    \mathbf{z}_t &= \sigma\!\left(\mathbf{W}_z [\mathbf{h}_{t-1},\, \mathbf{x}_t]\right), \label{eq:gru_update}\\
+    \mathbf{r}_t &= \sigma\!\left(\mathbf{W}_r [\mathbf{h}_{t-1},\, \mathbf{x}_t]\right), \label{eq:gru_reset}\\
+    \tilde{\mathbf{h}}_t &= \tanh\!\left(\mathbf{W} [\mathbf{r}_t \odot \mathbf{h}_{t-1},\, \mathbf{x}_t]\right), \label{eq:gru_candidate}\\
+    \mathbf{h}_t &= (1 - \mathbf{z}_t) \odot \mathbf{h}_{t-1} + \mathbf{z}_t \odot \tilde{\mathbf{h}}_t, \label{eq:gru_hidden}
+\end{align}
+where $\mathbf{z}_t$ is the \emph{update gate} (how much of the new candidate to incorporate), $\mathbf{r}_t$ is the \emph{reset gate} (how much of the old state to expose to the candidate computation), and $\odot$ denotes element-wise multiplication. The GRU uses fewer parameters than the LSTM while achieving comparable performance on most sequence tasks.
+
+\textbf{ConvGRU} replaces the fully connected weight matrices $\mathbf{W}_z, \mathbf{W}_r, \mathbf{W}$ with 2D convolution kernels, so the hidden state $\mathbf{h}_t \in \mathbb{R}^{C \times H \times W}$ is a spatial feature map rather than a vector. This preserves spatial structure throughout the recurrence, making ConvGRU well suited to image sequence fusion tasks.
+
+\textbf{MISRGRU for satellite multi-image SR.} Arefin et al.~\cite{MISRGRU-original} adapted ConvGRU to the \emph{multi-image super-resolution} (MISR) problem for the PROBA-V satellite dataset, where $N$ low-resolution images of the same ground patch acquired from slightly different viewpoints must be fused into a single high-resolution reconstruction. The model encodes each LR frame into a feature map with a shared CNN encoder, fuses them sequentially via ConvGRU, compresses the temporal dimension with global average pooling (GAP), and decodes the fused representation to the SR image. \cite{jelle2024,resurf2024} subsequently adapted MISRGRU to the SOFI fluorescence microscopy domain, demonstrating that the model can recover second-order SOFI quality from 8--20 frames at real-time inference speeds ($\approx$27\,ms per reconstruction).
+
+\textbf{Limitations for SOFI.} Despite their effectiveness, GRU-based fusion models have two structural limitations relevant to the SOFI setting. First, \emph{sequential latency}: the ConvGRU processes one frame at a time, and each step depends on the previous hidden state, so frames cannot be processed in parallel. On a GPU, inference time therefore scales approximately linearly with $N$ even when all frames are available simultaneously — a direct constraint on throughput. Second, \emph{asymmetric frame weighting}: by the time the GRU processes frame $N$, the update gate may have substantially overwritten contributions from early frames. For SOFI, blinking events in frame 1 carry the same statistical weight as those in frame $N$; the GRU's recurrent bias may therefore systematically underweight early-frame information. These limitations motivate exploring a parallel attention-based architecture that processes all $N$ frames simultaneously and without temporal ordering.
+
 \subsection{Transformers and Self-Attention}
+\label{subsec:transformers}
+
+The Transformer architecture~\cite{vaswani2017attention} departs from the sequential inductive bias of recurrent networks by processing all elements of a sequence in parallel via \emph{self-attention}. Each element attends to every other element in a single operation, making the computation fully parallelisable over the sequence length. This property is particularly relevant for multi-frame super-resolution, where $N$ input frames must be jointly processed to extract cross-frame correlations: a recurrent model must accumulate this information step-by-step, whereas a Transformer can attend to all $N$ frames simultaneously.
+
 \subsubsection{Scaled Dot-Product Attention}
+
+Given a sequence of $n$ input vectors packed into a matrix $\mathbf{X} \in \mathbb{R}^{n \times d}$, the self-attention mechanism projects each input into three representations — \emph{queries} $\mathbf{Q}$, \emph{keys} $\mathbf{K}$, and \emph{values} $\mathbf{V}$ — via learned linear projections $\mathbf{W}^Q, \mathbf{W}^K, \mathbf{W}^V \in \mathbb{R}^{d \times d_k}$:
+\begin{equation}
+  \mathbf{Q} = \mathbf{X}\mathbf{W}^Q, \quad \mathbf{K} = \mathbf{X}\mathbf{W}^K, \quad \mathbf{V} = \mathbf{X}\mathbf{W}^V.
+\end{equation}
+The output is a weighted sum of the values, where each weight is proportional to the compatibility between the corresponding query and key:
+\begin{equation}
+  \text{Attention}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{softmax}\!\left(\frac{\mathbf{Q}\mathbf{K}^\top}{\sqrt{d_k}}\right)\mathbf{V}.
+  \label{eq:attention}
+\end{equation}
+The scaling factor $1/\sqrt{d_k}$ prevents the dot products from growing large in magnitude when $d_k$ is large, which would push the softmax into regions of very small gradient.
+
 \subsubsection{Multi-Head Attention}
+
+Rather than performing a single attention operation in the full $d$-dimensional space, multi-head attention~\cite{vaswani2017attention} splits the representation into $h$ independent \emph{heads}, each operating in a lower-dimensional subspace of dimension $d_k = d / h$:
+\begin{equation}
+  \text{MultiHead}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{Concat}(\text{head}_1, \ldots, \text{head}_h)\,\mathbf{W}^O,
+\end{equation}
+where $\text{head}_i = \text{Attention}(\mathbf{Q}\mathbf{W}^Q_i, \mathbf{K}\mathbf{W}^K_i, \mathbf{V}\mathbf{W}^V_i)$ and $\mathbf{W}^O \in \mathbb{R}^{d \times d}$ is a learned output projection. Each head can specialise in a different type of relationship between sequence elements — for example, one head may capture short-range dependencies while another captures long-range ones.
+
+A standard Transformer encoder layer wraps multi-head attention with two residual connections and layer normalisation~\cite{ba2016layernorm}, followed by a position-wise feed-forward network (FFN) with hidden dimension $d_{\text{ff}}$:
+\begin{equation}
+  \mathbf{X}' = \text{LayerNorm}(\mathbf{X} + \text{MultiHead}(\mathbf{X})), \qquad
+  \mathbf{X}'' = \text{LayerNorm}(\mathbf{X}' + \text{FFN}(\mathbf{X}')).
+\end{equation}
+
 \subsubsection{Vision Transformers}
+
+The Vision Transformer (ViT)~\cite{dosovitskiy2020vit} applies the Transformer architecture to images by dividing a 2D image into a grid of non-overlapping patches, flattening each patch into a vector, and treating the sequence of patch vectors as the input tokens. A learnable \emph{class token} $\mathbf{e}_0$ is prepended to this sequence; after $L$ Transformer layers, the class token's final representation $\mathbf{e}_L$ is used for downstream tasks (e.g., classification). Because self-attention treats the sequence as an unordered set, a learnable or fixed \emph{positional encoding} is added to each token before the first layer to inject spatial (or temporal) order information.
+
 \subsubsection{TR-MISR: Transformer Multi-Image Super-Resolution}
+
+TR-MISR~\cite{TR-MISR-original} adapts the Transformer to the multi-image super-resolution (MISR) problem, where $N$ low-resolution images of the same scene must be fused into a single high-resolution reconstruction. Rather than treating 2D spatial patches as tokens, TR-MISR encodes each of the $N$ input frames into a feature map and then applies the Transformer \emph{per spatial position}: the $N$ feature vectors at each pixel location form a length-$N$ sequence, and a learnable embedding token is prepended to aggregate cross-frame information at that location.
+
+The key insight is that the class token at each pixel position learns an \emph{attention-weighted} combination of the $N$ frame features at that location. This contrasts with simple averaging or temporal summation: the attention weights are input-dependent, so the class token can down-weight frames in which the local signal is dominated by noise and up-weight frames in which the feature is informative. After $L$ Transformer layers, the class token's final state is used as the fused feature for that pixel position, and the complete fused feature map is passed to a decoder to produce the SR output.
+
+This design was originally applied to satellite multi-image super-resolution (PROBA-V dataset), where $N$ low-resolution satellite images of the same ground patch are fused. The architecture is adapted to the SOFI microscopy domain in Chapter~\ref{ch:method}.
+
+\subsubsection{VRT: Video Restoration Transformer}
+
+Liang et al.~\cite{vrt2022} extended Transformer-based fusion to general video restoration tasks including video super-resolution, denoising, and deblurring. VRT processes a sliding temporal window of frames using \emph{mutual attention} between the current frame and its temporal neighbours, combined with spatio-temporal self-attention within each window. Unlike TR-MISR's per-pixel sequence formulation, VRT flattens spatial patches into tokens and applies attention jointly across space and time, allowing the model to capture both local spatial detail and long-range temporal context within a single attention operation. VRT demonstrated state-of-the-art performance on standard video SR benchmarks, confirming that Transformer architectures can outperform convolutional and recurrent baselines when trained on large natural video datasets. The success of VRT on natural video motivates investigating whether similar architectural gains transfer to fluorescence microscopy SR, where the temporal statistics are stochastic blinking fluctuations rather than smooth motion, and training data is orders of magnitude scarcer.
+
+\subsubsection{DPA-TISR: Deformable Phase-space Alignment for Time-Lapse SR}
+
+Qiao et al.~\cite{qiao2025dpatisr} proposed DPA-TISR specifically for long-term live-cell SR imaging using structured illumination microscopy (SIM) data. The model addresses two limitations of single-image SR (SISR) when applied to time-lapse sequences: (1) SISR ignores temporal dependencies between frames, yielding temporally inconsistent reconstructions; (2) SISR provides no calibrated confidence estimate. DPA-TISR combines recurrent propagation with a novel \emph{deformable phase-space alignment} (DPA) module that operates in the Fourier domain: the frequency-domain phase of neighbouring feature maps is aligned before spatial fusion, enabling the model to correct sub-pixel inter-frame motions that optical-flow-based alignment approaches miss. A Bayesian extension (Bayesian DPA-TISR) further produces per-pixel confidence maps, allowing users to identify regions where the SR reconstruction is unreliable. Evaluated on the BioTISR dataset across five biological structures (microtubules, lysosomes, F-actin, mitochondria, clathrin-coated pits), DPA-TISR outperforms both sliding-window and recurrent SISR baselines in PSNR, SSIM, and temporal consistency.
+
+DPA-TISR and the present work address related but distinct problems. DPA-TISR targets conventional time-lapse SIM data: the input frames are exploited for their \emph{temporal continuity} (smooth motion between frames), and the model's alignment module is explicitly designed to compensate for that motion. Our work targets the \emph{fluctuation-based} SOFI reconstruction task, where temporal structure is statistically stationary blinking rather than continuous motion, and the goal is to approximate the SOFI cumulant from far fewer frames than the classical algorithm requires. The two settings therefore call for different inductive biases in the temporal fusion module, and results from DPA-TISR do not transfer directly to the SOFI domain.
+
+\subsubsection{Positional Encoding and Frame Exchangeability}
+
+A subtle but important design decision in TR-MISR — inherited by our SOFI adaptation — is the \emph{absence} of temporal positional encoding on the frame tokens. Standard Transformer models inject positional information via additive embeddings before the first attention layer to distinguish position 1 from position $N$. For video SR (VRT) or natural-language tasks, this is appropriate: frame $t+1$ causally follows frame $t$, and the temporal order carries semantic information.
+
+For SOFI, the blinking process is \emph{stationary}: the autocorrelation $G_2(r,\tau) = \langle \delta y(r,t+\tau)\,\delta y(r,t)\rangle$ depends only on the lag $\tau$, not on the absolute frame index. Permuting the $N$ input frames does not change the statistical information they collectively carry — they are exchangeable. Injecting a temporal positional embedding would therefore introduce a false inductive bias that the network must spend capacity to learn to ignore. The TR-MISR design processes the $N$ frame features as an \emph{unordered set}; only the learnable embedding token is distinguished from the frame tokens by its initialisation, not by any positional tag. This design is intentional and appropriate for SOFI, and contrasts explicitly with the temporal-position-aware designs suited for video SR.
+
 \subsection{Autoencoders and U-Net}
+\label{subsec:autoencoder}
+
+For the purposes of this thesis we briefly note two further architectural families; full descriptions are given in~\cite{jelle2024} §2.2.4--2.2.5. \emph{Autoencoders} learn a compressed latent representation by training an encoder-decoder pair to reconstruct the input; denoising autoencoders extend this to noise-corrupted inputs, making them relevant for low-SNR fluorescence restoration. \emph{U-Net} augments the encoder-decoder structure with \emph{skip connections} that concatenate feature maps from the encoding path directly into the decoding path at matching spatial scales, preserving spatial detail that would otherwise be lost to pooling operations. U-Net and its variants are widely applied to biomedical image restoration (e.g., CARE~\cite{jelle2024}). However, both architectures process \emph{single frames} and cannot exploit the temporal correlation of blinking fluctuations — a fundamental limitation for the SOFI acceleration task, which requires fusing information across $N$ frames.
+
 \subsection{Loss Functions for Super-Resolution}
+\label{subsec:loss_functions}
 
+The choice of training loss shapes what the network learns to optimise and has a direct impact on reconstruction quality for SOFI SR.
 
-Good question to flag early, examiners will notice if the background reads like a paraphrase of the prior thesis. Here's a concrete plan for each section: what to keep brief (cite Jelle), what to rewrite from a different angle, and what is genuinely new to your work.
+\textbf{Pixel-wise losses.} The $\ell_1$ (mean absolute error) loss $\mathcal{L}_{L1} = \frac{1}{HW}\|\hat{x} - y\|_1$ and the $\ell_2$ (mean squared error) loss $\mathcal{L}_{L2} = \frac{1}{HW}\|\hat{x} - y\|_2^2$ penalise deviations between the prediction $\hat{x}$ and the target $y$ in the spatial domain. $\ell_2$ penalises large errors quadratically, which biases the network towards producing blurry, averaged outputs; $\ell_1$ is more robust to outliers and tends to preserve sharper edges. Both losses treat all pixel locations equally, which is problematic when the image is dominated by a dark background (as is common in SOFI): the loss is then driven primarily by background pixels that carry no SR information.
 
-% §2.1 Fluorescence Microscopy — keep it short, reframe the angle
-% Jelle wrote this section to motivate SOFI in general. Your motivation is different: you need to establish why the temporal correlation structure of fluorophore blinking is the right signal for a sequence model to exploit. So rather than re-explaining the PSF from scratch, write one tight paragraph per subsection and use each one to build toward that point. The diffraction limit establishes why SR is needed; the PSF establishes what the model must undo; the deconvolution problem establishes why a learned approach is attractive. End §2.1 with a paragraph that explicitly frames the blinking time-series as an input sequence — this sets up §2.3 on sequence models naturally. You can cite Jelle (2024) for all the standard derivations and focus your prose on the new framing.
-% The super-resolution techniques table is worth keeping but restructure the columns. Jelle compared hardware complexity. Add a column for temporal structure exploitable by DL — SMLM has it (sparse localisation sequence), SOFI has it (dense correlated fluctuations), SIM does not. This makes the table yours and directly motivates why SOFI is a good match for MISR.
+\textbf{Fourier-domain loss.} The discrete Fourier transform $\mathcal{F}$ decomposes an image into amplitude $|X_{u,v}|$ and phase $\angle X_{u,v}$ components at each spatial frequency $(u,v)$. A Fourier-domain loss penalises errors in both:
+\begin{equation}
+    \mathcal{L}_{\mathcal{F}} = \frac{1}{HW}\sum_{u,v}
+    \Bigl(\bigl||\hat{X}_{u,v}| - |Y_{u,v}|\bigr| + \bigl|\angle\hat{X}_{u,v} - \angle Y_{u,v}\bigr|\Bigr),
+    \label{eq:fourier_loss}
+\end{equation}
+where $\hat{X} = \mathcal{F}\hat{x}$ and $Y = \mathcal{F}y$. Each frequency component contributes equally to the loss regardless of how many pixels in the spatial domain it corresponds to.
 
-% §2.2 SOFI — add two things Jelle did not cover
-% The cumulant theory (§2.2.1–2.2.3) is well-covered in Jelle and you should be brief here, citing him. What Jelle didn't need to discuss but you do:
-% First, add a subsection on the statistical view of blinking as a temporal sequence. SOFI computes cumulants over a window of T frames — but what does that window look like as a sequence? Plot or describe the autocorrelation structure of a single pixel's intensity trace. This is directly relevant to your thesis because you're asking whether a Transformer's self-attention (which has no explicit temporal ordering by default) can recover this correlation without the inductive bias of a recurrent network. Jelle never had to ask that question.
-% Second, add a short subsection on the frame-count vs. quality trade-off as a function. Jelle showed empirically that 20 frames is the sweet spot for MISRGRU. You should present this as a prior result and ask whether the same threshold holds for a Transformer, and why it might differ (attention can, in principle, weight all N frames simultaneously rather than forgetting early ones). This paragraph bridges §2.2 directly into §2.3.
+\textbf{Fourier loss and SOFI physics.} This frequency-equal weighting is particularly well motivated for SOFI SR. The resolution improvement that SOFI achieves over widefield microscopy is precisely a gain in \emph{high spatial frequencies}: the second-order cumulant image contains signal at frequencies above the diffraction-limited cut-off $f_c = \mathrm{NA}/\lambda$ of the raw image, up to $2f_c$ for second-order SOFI. An $\ell_1$ or $\ell_2$ loss in the spatial domain is dominated by the low-frequency background signal (which occupies most pixels), leaving the gradient signal from the high-frequency SR content relatively weak. A Fourier-domain loss directly and equally penalises errors at the super-resolved high-frequency band, making it the physically motivated training objective for SOFI. This provides a principled justification — beyond the empirical observations in~\cite{jelle2024,resurf2024} — for why Fourier loss consistently outperforms spatial $\ell_1$ loss on this task.
 
-% §2.3 Deep Learning — this is your main original contribution to the background
-% This section is almost entirely new relative to Jelle. Be generous here. Jelle covered CNNs, GRU/LSTM, autoencoders, and U-Net. You need all of that plus a substantial Transformers section. Some concrete guidance:
-% For §2.3.2 ConvGRU, write this as a limitation analysis, not just a description. What does sequential hidden-state processing mean for parallelism? What does the update gate forget? Why might early frames (which contain useful blinking events) be underweighted by the time the GRU processes frame 20? This motivates the Transformer without dismissing the GRU — the GRU is your main baseline.
-% For §2.3.3 Transformers, structure it as a progression: the attention mechanism → multi-head attention → ViT patch tokens → TR-MISR's specific innovation (the learnable embedding token). The embedding token is the conceptual centrepiece of your thesis — spend a full page on it. Explain it intuitively: rather than summarising N frames by averaging their hidden states (as the GAP layer does in MISRGRU), the embedding token learns to ask a question of all N frames simultaneously via attention. That is a fundamentally different inductive bias, and the thesis is about whether that difference matters for SOFI.
-% Also add a paragraph on positional encoding choices — TR-MISR processes frames as an unordered set (no temporal index), which differs from a video Transformer that uses temporal position embeddings. Is the order of the 20 input frames meaningful for SOFI? Probably not (blinking is stationary), but this is worth one paragraph explicitly justifying that design choice rather than leaving it implicit.
-% For §2.3.5 Loss Functions, Jelle covered Fourier loss well. What you can add is a brief discussion of frequency-domain interpretability for SOFI specifically: the SOFI cross-cumulant concentrates its SR information above the Nyquist frequency of the acquisition grid, which means a loss that operates in Fourier space directly penalises exactly the frequency band you care about. This is a stronger justification than Jelle gave and ties the loss function choice back to SOFI physics rather than just SR in general.
-
-% One structural change to consider
-% Move §2.2 (SOFI theory) after §2.3.1–2.3.2 (CNNs and GRUs), placing it just before §2.3.3 (Transformers). The logical flow then becomes: microscopy problem → classical SR techniques → what SOFI computes and why it has temporal structure → recurrent models for temporal data → their limitations → Transformers as an alternative. That sequencing is more motivated than presenting SOFI theory before the reader knows why temporal structure matters for the model choice.
+\textbf{Composite loss.} Combining both objectives:
+\begin{equation}
+    \mathcal{L} = \lambda_1\,\mathcal{L}_{L1} + \lambda_2\,\mathcal{L}_{\mathcal{F}},
+    \label{eq:composite_loss}
+\end{equation}
+uses the spatial loss to constrain global intensity and the Fourier loss to sharpen high-frequency details. We ablate the relative weights $\lambda_1, \lambda_2$ and the inclusion of amplitude-only vs.\ full (amplitude + phase) Fourier terms in Chapter~\ref{ch:results}.

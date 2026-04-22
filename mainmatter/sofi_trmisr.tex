@@ -75,11 +75,12 @@ Because the encoder is applied frame-by-frame, the full encoding of $N$ input fr
 
 The encoder architectures follow the designs from the original work of TR-MISR\cite{TR-MISR-original} and 
 MISRGRU\cite{MISRGRU-original,resurf2024} and consist of three stages. 
-An initial convolutional layer, followed by two residual blocks consisting of two convolutional layers each with parametric ReLU 
-(PReLU)\todo[inline]{cite}\cite{}. Lastly a final convolutional layer that produces the output feature map.
-3x3 kernels with same padding are used throughout, preserving the spatial dimensions of the input.
-The original TR-MISR encoder for the PROBA-V satellite dataset accepted two input channels (near-infrared and red bands). 
-For the single-channel fluorescence microscopy domain, the input is reduced to one channel.
+An initial convolutional layer, followed by two residual blocks consisting of two 
+convolutional layers each with parametric ReLU (PReLU)\todo[inline]{cite}\cite{}. 
+Lastly a final convolutional layer that produces the output feature map.
+3x3 kernels with same padding are used throughout, preserving the spatial dimensions 
+of the input. 
+%The original TR-MISR encoder for the PROBA-V satellite dataset accepted two input channels (near-infrared and red bands). 
 
 \section{Transformer Fusion}
 \label{sec:fusion}
@@ -100,12 +101,90 @@ For the single-channel fluorescence microscopy domain, the input is reduced to o
 %%         - CrossAttentionAggregator: embedding token cross-attends to frame tokens
 %%         - Comparison rationale: does more sophisticated aggregation help?
 
+First, \emph{parallel processing}: the Transformer attends to all $N$ input frames 
+simultaneously through multi-head self-attention, whereas the ConvGRU must process 
+frames sequentially, accumulating a hidden state one step at a time. In principle, this eliminates 
+the $O(N)$ sequential bottleneck at inference time, but introduces a different computational cost 
+due to the quadratic complexity of self-attention. Second, the authors of TR-MISR\cite{TR-MISR-original} 
+state that the transformer fusion significantly improves the \emph{robustness to noise}. TR-MISR adopts 
+adopts an additional learnable embedding vector that fuses the encoded vectors to restore the details 
+of the image. \cite{TR-MISR-original}.
+Third, the original model is \emph{permutation invariant}: that works well for temporaly uncorelated 
+input data, however, in our case we specifically want to exploit the temporal blinking in ordered input frames. 
+Because of that we modify the architecture to include positional encodings, which are added to the 
+encoded frame features before the fusion stage.
+
+The fusion module, which we refer to as \texttt{SuperResTransformer}, consists of $N$ standard Transformer layers applied to a 
+sequence that combines the encoded frame features with a learnable embedding token, as described below.
+
 \subsection{Learnable Embedding Token}
+
+% As described in Section~\ref{subsec:transformers}, TR-MISR introduces a learnable \emph{class token} 
+% $\mathbf{e}_0 \in \mathbb{R}^d$ that is prepended to the sequence of encoded frame tokens before the 
+% first Transformer layer. At each layer $l$, the token participates in multi-head self-attention 
+% alongside the $N$ frame features at the current pixel position and is updated to $\mathbf{e}^{(l+1)}$. 
+% After $L$ layers, the final token $\mathbf{e}_L$ serves as the fused representation for that pixel and 
+% is passed to the decoder:
+% \begin{equation}
+%   \mathbf{e}^{(l+1)}_{h,w} = \text{Attn}\!\left([\mathbf{e}^{(l)}_{h,w};\ \mathbf{r}_{1,h,w},\ \ldots,\ \mathbf{r}_{N,h,w}]\right),
+% \end{equation}
+% where $[\cdot\,;\cdot]$ denotes concatenation along the sequence dimension, 
+% $\mathbf{r}_{i,h,w} \in \mathbb{R}^C$ is the feature vector at spatial position $(h,w)$ in the encoded 
+% representation of frame $i$, and the class token is shared across all pixel positions within a batch.
+
+% This design contrasts with the temporal summation used in MISRGRU, which collapses the $N$ final hidden 
+% states into a single feature map by summing across the frame dimension. 
+% Summation weights all frames equally; the class token at each pixel learns an attention-weighted 
+% combination of the $N$ frame features at that location, and can therefore down-weight frames in which 
+% the local signal is dominated by noise. Intuitively, for fluorescence microscopy, one would expect the 
+% class token at an active emitter site to attend most strongly to frames in which the emitter is bright, 
+% and to suppress dark or noisy frames.
+
 \subsection{Multi-Head Self-Attention across Frames}
+
+% The scaled dot-product attention and multi-head attention operations are defined in Section~\ref{subsec:transformers}. Here we describe how they are applied to the encoded frame features.
+
+% The encoder produces feature maps of shape $(B, N, C, H, W)$ with $C = 24$ channels and $H = W = 64$. The fusion is applied \emph{per spatial location}: the tensor is permuted to $(B, H, W, N, C)$ and reshaped to $(B \cdot H \cdot W, N, C)$, creating $H \times W$ independent length-$N$ sequences per batch element — one sequence per pixel position. The class token $\mathbf{e}_0$ is prepended to each sequence, giving $N + 1$ tokens of dimension $d = C$. Multi-head self-attention (Eq.~\ref{eq:attention}) is then applied with $h$ heads of dimension $d_k = d / h$. After $L$ Transformer layers, the class token at each position is extracted as the fused $C$-dimensional feature for that pixel. The $B \cdot H \cdot W$ outputs are reassembled into a spatial feature map of shape $(B, C, H, W)$ for the decoder. The default SOFI configuration uses $L = 2$ layers, $h = 2$ heads, and $\text{mlp\_dim} = 128$; feed-forward sublayers with pre-LayerNorm follow each attention block.
+
+% An important consequence of this per-pixel design is that the attention operates \emph{across frames only}, not across spatial positions. The class token at $(i, j)$ attends to the $N$ frame features at that same location, but cannot aggregate information from neighbouring pixels. This is in contrast to the ConvGRU, whose convolutional gates naturally mix spatial context within their receptive field at each recurrent step.
+
+% A second key property is \emph{permutation invariance}: the self-attention treats the $N$ frame features as an unordered set, since no positional encoding is applied along the frame dimension. Unlike the ConvGRU, which builds causal temporal dependencies as it processes frames in order, TRNet's fusion is insensitive to frame ordering. As the experiments in Section~\ref{sec:arch_compare} show, this may be a disadvantage for SOFI, where the temporal sequence of blinking events encodes statistical structure that the GRU can exploit. To address this, we also evaluate a variant with sinusoidal positional encodings added to the frame tokens before the first attention layer.
+
 \subsection{Architecture Variants}
+\label{sec:trnet_variants}
+
+Three variants of the Transformer-based architecture were evaluated to isolate the contribution 
+of each design choice.
+
 \subsubsection{TRNet (baseline Transformer)}
+The baseline adaptation of the satellite TR-MISR to SOFI microscopy. 
+The original decoder (PixelShuffle with an upscaling factor of $3\times$) is replaced with a 
+$2\times$ PixelShuffle followed by a centre-crop to the required $2n-7$ output size. 
+The encoder is reduced from two input channels (NIR and RED satellite bands) to a single fluorescence 
+channel.
+
 \subsubsection{TRNet\_deconv (ConvTranspose2d decoder)}
-\subsubsection{TRNet\_improved (FlashAttention + CrossAttentionAggregator)}
+Replaces the PixelShuffle-and-crop decoder with a \texttt{ConvTranspose2d} decoder identical to decoder 
+used in MISRGRU. The transposed convolution with stride 2, padding 4, and kernel size 3 
+naturally produces an output of size $2n - 7$ without requiring an explicit crop.
+
+\subsubsection{TRNet\_improved (SDPA attention + CrossAttentionAggregator)}
+An experimental variant that addresses two limitations of the baseline.
+First, the manual einsum attention of \texttt{TRNet\_fix} (which also carried a scaling
+bug: $1/\sqrt{d_\text{model}}$ instead of the correct $1/\sqrt{d_\text{head}}$) is replaced
+with \texttt{nn.MultiheadAttention}, which internally dispatches to PyTorch's
+\texttt{scaled\_dot\_product\_attention} (SDPA).
+% On Ampere-class GPUs, SDPA selects a Flash Attention~\cite{dao2022flashattention}-style
+% fused kernel that tiles computation in SRAM, reducing memory bandwidth and enabling longer
+% sequences; on other hardware it falls back to a memory-efficient or standard math implementation.
+Second, the class token is removed entirely.
+A \texttt{CrossAttentionAggregator} replaces it: a single learned query cross-attends
+directly to all frame key/value pairs after self-attention, instead of the class token
+being prepended to the frame sequence and relying on $N$ self-attention layers to
+passively accumulate cross-frame information.
+This provides a cleaner separation between frame-to-frame communication and
+the final aggregation step.
+\todo[inline]{verify this claim ^}
 
 \section{Decoder}
 \label{sec:decoder}
