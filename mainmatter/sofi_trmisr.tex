@@ -172,28 +172,234 @@ naturally produces an output of size $2n - 7$ without requiring an explicit crop
 An experimental variant that addresses two limitations of the baseline.
 First, the manual einsum attention of \texttt{TRNet\_fix} (which also carried a scaling
 bug: $1/\sqrt{d_\text{model}}$ instead of the correct $1/\sqrt{d_\text{head}}$) is replaced
-with \texttt{nn.MultiheadAttention}, which internally dispatches to PyTorch's
-\texttt{scaled\_dot\_product\_attention} (SDPA).
+with \texttt{nn.MultiheadAttention}, which internally uses scaled dot product attention from PyTorch implementation.
 % On Ampere-class GPUs, SDPA selects a Flash Attention~\cite{dao2022flashattention}-style
 % fused kernel that tiles computation in SRAM, reducing memory bandwidth and enabling longer
 % sequences; on other hardware it falls back to a memory-efficient or standard math implementation.
-Second, the class token is removed entirely.
-A \texttt{CrossAttentionAggregator} replaces it: a single learned query cross-attends
-directly to all frame key/value pairs after self-attention, instead of the class token
-being prepended to the frame sequence and relying on $N$ self-attention layers to
-passively accumulate cross-frame information.
+Second, the class token is removed entirely. Instead, a \texttt{CrossAttentionAggregator} is used where 
+a single learned query cross-attends directly to all frame key/value pairs after self-attention, 
+instead of the class token being prepended to the frame sequence and relying on $N$ self-attention 
+layers to passively accumulate cross-frame information.
 This provides a cleaner separation between frame-to-frame communication and
-the final aggregation step.
-\todo[inline]{verify this claim ^}
+the final aggregation step. \todo[inline]{verify this claim}
 
 \section{Decoder}
 \label{sec:decoder}
-%% Key modification from original TR-MISR (PROBA-V 3× PixelShuffle):
-%% - SOFI requires exact 2n-7 output size (non-integer γ for 2nd order)
-%% - Two strategies compared:
-%%   (a) PixelShuffle 2× + centre-crop to 2n-7
-%%   (b) ConvTranspose2d — variable stride to target the exact output size
-%% - 2× Conv + PReLU + 1×1 Conv projection to 1 output channel
+Two decoder strategies were compared in this work, as described in Section \ref{sec:trnet_variants}.
+
+The decoder receives a fused spatial feature map $\mathbf{z} \in \mathbb{R}^{C \times H \times W}$ 
+and must produce the target SOFI image $\hat{\mathbf{Y}} \in \mathbb{R}^{1 \times (2H-7) \times (2W-7)}$. 
+
+\paragraph{PixelShuffle decoder (TR-MISR baseline).}
+PixelShuffle~\cite{shi2016pixelshuffle}, also known as sub-pixel convolution, is an efficient and parameter-free
+spatial upsampler \cite{TR-MISR-original}. Unlike interpolation-based methods, pixel shuffle does not explicitly 
+estimate missing pixels. Instead, it rearranges feature channels from a low-resolution feature map into spatial 
+positions of a higher-resolution output. Moreover, this approach avoids the checkerboard artefacts that 
+transposed convolutions can introduce when their stride does not divide evenly into the kernel size 
+\cite{odena2016deconvolution}.
+More specifically, let the input feature map have dimensions $H \times W \times C_{\text{in}} r^2$, 
+where $r$ is the upscaling factor. The pixel shuffle operation transforms this tensor into an output 
+of size $rH \times rW \times C_{\text{in}}$ by redistributing the $r^2$ channels associated 
+to each spatial location into an $r \times r$ spatial neighborhood in the high-resolution image.
+
+For the PROBA-V satellite benchmark, the target resolution was an exact $3\times$ upscale of the input. 
+We modified the original network for our use case, so a $2\times$ PixelShuffle is applied.
+Our decoder consists of the following steps:
+\begin{enumerate}
+  \item A $3 \times 3$ convolutional layer with PReLU activation decreases the number of channels from $24$ to $4C$.
+  \item PixelShuffle rearranges the 
+  $4 \times H \times W$ tensor into $1 \times 2H \times 2W$.
+  \item A deterministic centre-crop removes 3 pixels from the top/left and 4 pixels from the bottom/right, which results in the desired output size.
+\end{enumerate}
+The asymmetric crop (3 vs.\ 4 pixels on opposite sides) introduces a spatial offset in the predicted image and 
+does not back-propagate any learnable upsampling signal through the cropped region. 
+This is a known limitation of PixelShuffle when the target size is not an exact power-of-two multiple of the input.
+
+\paragraph{ConvTranspose2d decoder (TRNet\_deconv and MISRGRU).}
+The original MISRGRU\cite{MISRGRU-original} and RESURF\cite{resurf2024} model (adapted for microscopy domain) use a
+transposed convolutional layer to upsample the fused features. The key advantage over PixelShuffle is that the
+upsampling kernel is fully learned and the $2H - 7$ target size is achieved without any explicit crop,
+so the decoder's receptive field covers all output pixels:
+\begin{equation}
+  \hat{\mathbf{Y}} = \mathcal{D}_\beta(\mathbf{z}) \in \mathbb{R}^{1 \times (2H-7) \times (2W-7)}.
+  \label{eq:decoder}
+\end{equation}
+
+The decoder consists of the following layers:
+\begin{enumerate}
+  \item \texttt{ConvTranspose2d}($C \to C$, kernel $3\times3$, stride 2, padding 4, output\_padding 0)
+  \item Two $3 \times 3$ convolutional layers with PReLU refine the upsampled features.
+  \item A $1 \times 1$ convolutional projection reduces from $C$ channels to a single output channel.
+\end{enumerate}
+All three layers maintain $C = 24$ channels until the final projection.
+
+The output spatial dimension of a transposed convolution with kernel size $k$, stride $s$, padding $p$, and output padding $p_\text{out}$ is:
+\begin{equation}
+  H_\text{out} = (H_\text{in} - 1) \cdot s - 2p + k + p_\text{out}.
+  \label{eq:convtranspose_size}
+\end{equation}
+Substituting the decoder parameters ($s{=}2,\ p{=}4,\ k{=}3,\ p_\text{out}{=}0$) gives:
+\begin{equation}
+  H_\text{out} = (H - 1)\cdot 2 - 2\cdot 4 + 3 = 2H - 7,
+  \label{eq:decoder_size}
+\end{equation}
+which matches the 2nd-order SOFI target exactly.
+
+
+\section{Going back to MISRGRU}
+\label{sec:streaming_arch}
+
+The comparison of TR-MISR to RESURF in Section~\ref{sec:arch_compare} demonstrated that the TRNet did not improve 
+upon the established ConvGRU architecture under the tested conditions, neither in reconstruction quality nor 
+in computational efficiency. 
+Rather than continuing to tune the TRNet, we redirected effort towards a limitation of the batch MISRGRU 
+model:
+Hidden state $h_n$ contains similar information as previous hidden states $h_1, \dots, h_{n-1}$. 
+Since the GRU accumulates context recurrently, $h_n$ already encodes a summary of all $n$ frames making 
+it redundant to aggregate across all intermediate states. Decoding $h_n$ alone should be sufficient to 
+reconstruct the SR output. 
+
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{figures/resurf_architecture.png}
+  \caption{Overview of RESURF (batch MISRGRU) architecture visualizing encoder, ConvGRU fusion, and decoder components.}
+  \label{fig:resurf_arch}
+\end{figure}
+
+Second disadvantage of the batch MISRGRU is that for every new input frame, the entire sequence of $N$ frames 
+must be re-encoded and processed through the ConvGRU. \todo[inline]{show experimentaly that it needs to be re-encoded as it sums up the values the decoded frames become worse} 
+A \emph{streaming} mode addresses this directly: 
+one SR image is produced for every new input frame, using all frames seen so far to drive the reconstruction.
+We tested 2 different architectures to tackle the problems mentioned: Streaming MISRGRU and sliding-window MISRGRU.
+
+\subsection{Streaming MISRGRU}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{figures/streaming_misrgru_architecture.png}
+  \caption{Streaming Many-to-Many MISR-GRU architecture. Each input frame $I_t$ is encoded independently by the shared encoder $\theta$, fused by the ConvGRU with the previous hidden state $h_{t-1}$ to produce $h_t$, and decoded by the shared decoder $\beta$ to produce the super-resolved output $H_t$. Shared weights are indicated by identical labels.}
+  \label{fig:streaming_arch}
+\end{figure}
+
+We tested 2 different architectures to tackle the problems mentioned:
+Frist the streaming architecture (Figure~\ref{fig:streaming_arch}) reuses the encoder and decoder from the batch 
+MISRGRU without modification. 
+The key change is in how the ConvGRU hidden state is managed. 
+In the batch model, the hidden state is initialised to zero at the start of each sample and reset between 
+samples. In the streaming model, the hidden state $\mathbf{h}_t$ is carried across successive frames, 
+accumulating context as more frames arrive:
+\begin{equation}
+  \mathbf{h}_t = \text{ConvGRU}(\text{Encoder}(\mathbf{l}_t),\ \mathbf{h}_{t-1}),
+  \qquad
+  \hat{\mathbf{Y}}_t = \text{Decoder}(\mathbf{h}_t).
+\end{equation}
+
+\subsection{Sliding-window MISRGRU}
+The major computation bottleneck when we want to superresolve a movie is that all previous hidden states
+$\mathbf{h}_t$ need to be recomputed when a new frame arrives. This small modification to RESURF 
+addresses this by remembering last $\mathbf{n}$ hidden states and only Computing $\mathbf{r}_n$,
+$\mathbf{h}_n$, GAP and Decoder.
+
+We designed experiments to see how this architecture without reinitializing the hidden state performs when run longer than 20 frames.
+
+
+\subsection{Training with Truncated Backpropagation through Time}
+
+Training on sequences of length 50–100 frames with standard backpropagation through time (BPTT)
+is memory-prohibitive: the activation graph grows linearly with sequence length. We use 
+\emph{truncated BPTT} (TBPTT): the sequence is split into chunks of length 
+\texttt{chunk\_size}, and the hidden state is detached from the computational graph at each 
+chunk boundary. Only gradients within a chunk are backpropagated.
+
+A second key hyperparameter is \texttt{loss\_last\_n}: supervision is applied only on the 
+\emph{last} $n$ frames of each chunk, allowing the GRU to accumulate meaningful context for 
+several steps before being penalised. Supervising every frame from the first step (as in the 
+\texttt{loss\_all\_frames} variant) causes the model to optimise for single-frame output 
+quality, which prevents the GRU from learning to defer quality improvements to later frames.
+
+The sensitivity of training to these hyperparameters is severe: chunk sizes of 10 frames
+(\texttt{T10}) produced a near-zero Pearson correlation of $\sim$0.002, indicating complete
+convergence failure (Section~\ref{sec:streaming}). A minimum chunk size of 25 frames is
+required for stable training.
+
+\subsection{Alignment-Augmented Streaming MISRGRU}
+\label{sec:dpa_arch}
+
+A fundamental challenge in the streaming setting is that the hidden state $\mathbf{h}_{t-1}$
+is anchored to the coordinate system of the previous frame, while the encoder features
+$\mathbf{f}_t$ are anchored to the current frame.
+In the presence of sample drift or camera jitter, this coordinate mismatch can cause the
+GRU gates to misinterpret temporal change as spatial novelty, degrading the quality of the
+accumulated memory.
+Inspired by DPA-TISR~\cite{qiao2025dpa}, which applies a \emph{Deformable Phase-space Alignment}
+module before each recurrent update in a video super-resolution network, we introduce two
+alignment variants for the streaming MISRGRU.
+
+\subsubsection{Phase-space Alignment (RFFT)}
+\label{sec:rfft_align}
+
+The RFFT alignment module performs a sub-pixel phase correction of the hidden state toward
+the current encoder features in the frequency domain.
+Given $\mathbf{h}$ (the signal to align) and $\mathbf{f}$ (the alignment target), the module
+computes:
+\begin{align}
+  \hat{\mathbf{H}} &= \mathcal{F}_r(\mathbf{h}), \quad \hat{\mathbf{F}} = \mathcal{F}_r(\mathbf{f}), \\
+  \phi_\mathbf{h} &= \angle\hat{\mathbf{H}}, \quad \phi_\mathbf{f} = \angle\hat{\mathbf{F}}, \\
+  \Delta\phi &= g_\phi([\phi_\mathbf{h};\,\phi_\mathbf{f}]), \\
+  \mathbf{h}_\text{aligned} &= \mathcal{F}_r^{-1}\!\left(|\hat{\mathbf{H}}|\cdot e^{i(\phi_\mathbf{h}+\Delta\phi)}\right),
+\end{align}
+where $\mathcal{F}_r$ denotes the real-valued 2-D FFT, $g_\phi$ is a small convolutional network
+that predicts a per-channel phase correction from the concatenated phase spectra, and
+$|\hat{\mathbf{H}}|$ denotes the amplitude of $\hat{\mathbf{H}}$.
+The amplitude of the hidden state is preserved exactly; only the phase is adjusted.
+The output layer of $g_\phi$ is zero-initialised, so the module begins as an identity
+transformation and learns alignment gradually during training.
+RFFT alignment is a \emph{rigid} correction: it can compensate for a global sub-pixel
+translational shift but cannot model non-rigid local deformation.
+
+\subsubsection{Coarse Spatial Warp (Warp+RFFT variant)}
+\label{sec:warp_align}
+
+To provide coarse spatial alignment before the sub-pixel RFFT correction, the Warp+RFFT
+variant prepends a \emph{FeatureWarpAlignment} module.
+A small flow-estimation network $g_\text{flow}$ predicts a dense 2-D displacement field
+$\mathbf{v} \in \mathbb{R}^{B\times 2\times H\times W}$ from the concatenated hidden state
+and encoder features:
+\begin{equation}
+  \mathbf{v} = g_\text{flow}([\mathbf{h};\,\mathbf{f}]),
+  \qquad
+  \mathbf{h}_\text{warped} = \mathcal{W}(\mathbf{h},\, \mathbf{v}),
+\end{equation}
+where $\mathcal{W}$ denotes bilinear grid sampling (\texttt{grid\_sample} with border padding).
+The warped hidden state $\mathbf{h}_\text{warped}$ is then passed to the RFFT module for
+sub-pixel refinement, yielding the final aligned memory $\mathbf{h}_\text{aligned}$.
+Like the RFFT module, $g_\text{flow}$ is zero-initialised at its output layer, so the network
+starts without any warp and learns displacements incrementally.
+The complete Warp+RFFT alignment pipeline is:
+\begin{equation}
+  \mathbf{h}_\text{aligned} = \texttt{RFFT}(\mathcal{W}(\mathbf{h},\, g_\text{flow}([\mathbf{h};\,\mathbf{f}])),\;\mathbf{f}).
+\end{equation}
+
+\subsubsection{Deformable Convolution Alignment (DPA variant)}
+\label{sec:dcn_align}
+
+The DPA variant follows the alignment order in the original DPA-TISR paper more closely:
+the RFFT module is applied first for a global sub-pixel correction, followed by a
+\emph{DeformableConvAlignment} module for spatially-varying non-rigid refinement.
+The deformable convolution layer~\cite{dai2017dcn} takes the RFFT-aligned hidden state
+and the encoder features as input, and predicts per-pixel offsets $\Delta\mathbf{p}$ and
+modulation masks $\mathbf{m}$ from a lightweight convolutional network:
+\begin{equation}
+  (\Delta\mathbf{p},\, \mathbf{m}) = g_\text{dcn}([\mathbf{h}_\text{rfft};\,\mathbf{f}]),
+  \qquad
+  \mathbf{h}_\text{aligned} = \text{DCN}(\mathbf{h}_\text{rfft};\,\Delta\mathbf{p},\,\mathbf{m}),
+\end{equation}
+where $\text{DCN}$ denotes modulated deformable convolution with $3\times3$ kernel,
+$\Delta\mathbf{p}$ shifts each sampling location individually, and $\mathbf{m}$ weights
+the contribution of each location (allowing the module to suppress unreliable aligned regions).
+In both variants the encoder features $\mathbf{f}_t$ are passed to the GRU unchanged,
+so the recurrent output remains anchored to the current frame's coordinate system.
 
 \section{Loss Functions}
 \label{sec:loss}
@@ -228,39 +434,168 @@ the final aggregation step.
 %% ============================================================
 \chapter{Datasets}
 \label{ch:datasets}
-%% Target length: ~8 pages
-%% Largely follows Jelle Ch. 5; note differences in data format (.pt tensors).
 
-\section{Synthetic Data}
+This chapter describes the datasets used for training and evaluating the TRNet and MISRGRU architectures.
+All experiments use the same synthetic dataset that was created by Komen and Tekpinar, which was used 
+in the thesis~\cite{jelle2024} and subsequently in the RESURF paper~\cite{resurf2024}.
+No modifications were made to the simulation pipeline or to the raw simulated data.
+The only novel data-preparation contribution in this work is the motion augmentation procedure
+described in Section~\ref{sec:motion_augment}, which was introduced specifically for training
+the streaming MISRGRU variant.
+
+\section{Synthetic Data }
 \label{sec:synthetic}
-%% 4.1.1  SOFI simulation pipeline (GrussmayerLab/Sofi_Simulations)
-%%         - sCMOS noise model (Willy FPS_100 camera)
-%%         - Physical microtubule model (Shariff et al. 2010)
-%%         - Parameter table (Table 5.1–5.2 from Jelle, reproduced/updated)
-%%
-%% 4.1.2  SOFI package (second-order cross-cumulant targets)
-%%         - Adaptive linearisation preferred (fewer background artefacts)
-%%         - Table 5.3: SOFI tool settings
-%%
-%% 4.1.3  Pre-processing and Storage
-%%         - Converted to PyTorch .pt tensors (preprocess_pt_dataset.py)
-%%         - Cropped: 64×64 LR patches → 121×121 HR targets
-%%         - 80/20 random split (vs. directory-based in original TR-MISR)
-%%         - Training sizes tested: 500, 1000, 3000, 4000, 5000 samples
 
-\subsection{Simulation Parameters}
-\subsection{SOFI Processing}
-\subsection{Pre-processing Pipeline and Data Format}
-\subsection{Training Set Size Experiments}
+Fluorescence microscopy experiments are time-consuming and thus obtaining
+ground-truth super-resolved images from real data is hard. For this reason, a simulation-based 
+dataset was used where different conditions could be controlled such as blinking speed and 
+background noise. 
+The synthetic dataset provides paired low-resolution (LR)
+fluorescence stacks of 100 frames and corresponding high-resolution (HR) SOFI targets.
 
-\section{Real Microscopy Data}
-\label{sec:real_data}
-%% Reuse Jelle's datasets (microtubules + mitochondria); identical acquisition.
-%% Note any differences in cropping strategy or patch size vs. Jelle's 128×128.
-%% Minimum dataset requirements (≥4 fixed-cell sets, ≥3000 frames, FOV ≥350×350).
-%% Table: microtubule SOFI settings (Table 5.4), mitochondria settings (Table 5.5).
-%% Background subtraction (Tekpinar et al.) for mitochondria.
+\subsection{Simulated Data Conditions}
+\label{sec:simulation_pipeline}
 
-\subsection{Fixed-Cell Microtubules}
-\subsection{Fixed-Cell Mitochondria}
-\subsection{Data Augmentation}
+To build a dataset that generalises across different experimental conditions,
+simulations were run under 12 distinct signal-to-noise settings formed by the
+combination of three blinking-speed regimes and four photon-level fractions:
+
+\begin{itemize}
+  \item \textbf{Blinking speeds}: fast, medium, and slow, corresponding to
+        fluorophore on/off-times of approximately 600ms, 1200ms, and 2000ms respectively.
+  \item \textbf{Photon levels}: 100\%, 80\%, 60\%, and 40\% of the nominal ion photon count,
+        progressively reducing the peak signal intensity.
+\end{itemize}
+
+
+\section{Motion Augmentation}
+\label{sec:motion_augment}
+
+The synthetic dataset described above contains no sample motion: each frame in a
+sequence depicts exactly the same field of view, where each fluorophore is located 
+at the same (x,y) coordinate and provides only stochastic blinking.
+This is appropriate for the batch MISRGRU and TRNet models, which output a single
+SR image from a fixed set of $N$ frames.
+However, the key idea of multi-input multi-output models, such as the streaming MISRGRU 
+(Section~\ref{sec:streaming_arch}), is to produce a super-resolved image at \emph{every} 
+time step. This is particularly important for live-cell microscopy, where biologists are interested 
+in monitoring dynamic processes in real time.  
+
+In live-cell microscopy, sample drift on the order of tens of nanometres per second
+is common and unavoidable. Structures such as vesicles or mitochondria can move across the field 
+at 0.5-5~\textmu m/s~\cite{tang2013fast}.
+
+Training the streaming model on purely static data means that the network never observes
+a situation where the correct HR target changes between frames.
+As a result, a model trained without motion augmentation has no incentive to
+track the current field position.
+Motion augmentation addresses this by transforming each static training sample
+into a sequence with a plausible slow drift trajectory, and generating
+a corresponding per-frame HR target that shifts with the sample. 
+Again such data is difficult to obtain experimentally, so we augmented synthetic data 
+from the original static dataset.
+
+\subsection{Adding Motion to Sofi Simulation Tool}                                    
+
+  The tool to generate synthetic microtubules works as follows:                                                   
+  \begin{enumerate}                                                                     
+    \item Randomly generates microtubules by growing them segment by segment. Each segment is drawn 
+    from Gausian distribution and then a small angle is added to connect next segment.  
+    \item Places fluorescent emitters randomly along the microtubule mask and           
+          assigns each one a fixed position along its filament. That position is maintained 
+          across frames.                       
+    \item Simulates blinking by assigning each emitter an independent on/off            
+          brightness based on chosen parameters for blinking speed and photon level.                        
+    \item Convolves the resulting photon map with the PSF and adds camera noise
+          to produce the final fluorescence movie.                                      
+  \end{enumerate} 
+                                                                                        
+  \noindent    
+  The idea was to add motion directly to the first step of the original simulation pipeline.                                                                         
+  Motion could be introduced by perturbing the segment angles of each
+  microtubule frame-by-frame using an Ornstein--Uhlenbeck process~\cite{uhlenbeck1930brownian}, 
+  causing the microtubules to move and bend smoothly over time. 
+  Each emitter would then follow the motion of its assigned microtubule and thus blink 
+  at different spatial locations. 
+  The per-frame HR targets would be generated by applying the same transformations 
+  to the static HR images. 
+  
+  This approach was not used as the pipeline was complex to extend and there were 
+  many variables to finetune to achieve realistic motion.
+
+\subsection{Middle Crop Trajectory Generation}                                                           
+  \label{sec:trajectory_gen}                                                                               
+A much simpler idea, although less biologically realistic, is to generate a single random 
+trajectory of sub-pixel shifts and apply it uniformly to the entire field of view.
+Sequence of displacements are sampled from zero-mean Gaussian noise with a specified RMS step 
+size, and integrated over time, The trajectory is then clipped to $[-d_{\max}, d_{\max}]$                     
+  per axis to prevent large zero-padded border regions.                                                    
+                                                                                                           
+  \begin{algorithm}[h]                                                                                     
+  \caption{Random-walk drift trajectory generation}                                                        
+  \label{alg:trajectory}                                                                                   
+  \begin{algorithmic}[1]
+    \Require $T$ (frames), $\sigma_v$ (RMS step size in LR px/frame),                                      
+             $d_{\max}$ (max displacement per axis)                                                        
+    \State Draw steps $\mathbf{s} \sim \mathcal{N}(\mathbf{0},\, \sigma_v^2 \mathbf{I})$,
+           shape $(T, 2)$                                                                                  
+    \State $\boldsymbol{\tau} \leftarrow \mathrm{cumsum}(\mathbf{s},\ \mathrm{axis}=0)$
+    \State $k \leftarrow \mathrm{clamp}\!\left(\lfloor 1 / \sigma_v \rfloor,\ 3,\ 7\right)$                
+    \For{each axis $a \in \{y, x\}$}                                                                       
+      \State $\boldsymbol{\tau}_{:,a} \leftarrow \mathrm{uniform\_filter1d}(\boldsymbol{\tau}_{:,a},\ k)$  
+    \EndFor                                                                                                
+    \State $\boldsymbol{\tau} \leftarrow \mathrm{clip}(\boldsymbol{\tau},\ -d_{\max},\ +d_{\max})$         
+    \State \Return $\boldsymbol{\tau} \in \mathbb{R}^{T \times 2}$                                         
+  \end{algorithmic}
+  \end{algorithm}                                                                                          
+                  
+  \subsection{Frame Shifting and Per-Frame Targets}
+  \label{sec:frame_shifting}
+
+  \begin{algorithm}[h]
+  \caption{Per-frame shifting for motion augmentation}
+  \label{alg:shift}
+  \begin{algorithmic}[1]
+    \Require $\mathbf{L}$ ($T \times H \times W$), $\mathbf{Y}$ ($H_\text{hr} \times W_\text{hr}$),        
+             $\boldsymbol{\tau}$ ($T \times 2$)
+    \State $s_y \leftarrow H_\text{hr} / H$, \quad $s_x \leftarrow W_\text{hr} / W$                        
+    \For{$t = 1, \ldots, T$}
+      \State $(dy_t, dx_t) \leftarrow \boldsymbol{\tau}[t]$                                                
+      \State $\hat{\mathbf{l}}_t \leftarrow \mathrm{shift}(\mathbf{L}[t],\ (dy_t, dx_t))$
+             \hfill\textit{// bilinear, zero-pad}                                                          
+      \State $\hat{\mathbf{y}}_t \leftarrow \mathrm{shift}(\mathbf{Y},\ (dy_t s_y,\ dx_t s_x))$
+             \hfill\textit{// bilinear, zero-pad}                                                          
+    \EndFor                                                                                                
+    \State \Return $\hat{\mathbf{L}}$ ($T \times H \times W$),\;                                           
+                   $\hat{\mathbf{Y}}$ ($T \times H_\text{hr} \times W_\text{hr}$)                          
+  \end{algorithmic}                                                                                        
+  \end{algorithm}
+                                                                                                           
+  The critical consequence of this procedure is that each frame $t$ receives its own
+  HR ground-truth $\hat{\mathbf{y}}_t$. In the static case, a single HR image is broadcast
+  across all time steps, so the model can ignore temporal position entirely.                               
+  With motion augmentation, the correct answer changes at every frame: the loss
+  $\mathcal{L}(\hat{Y}_t, \hat{\mathbf{y}}_t)$ forces the streaming model to predict                       
+  the HR image at the \emph{current} position of the field of view, not a single
+  consensus reconstruction.                                                                                
+                  
+  \subsection{Integration into Training}                                                                   
+  \label{sec:motion_training_integration}
+
+  Motion augmentation is applied on-the-fly during training inside the
+  \texttt{StreamingTensorDataset} data loader.
+  For each sample, a Bernoulli trial with probability $p_\text{motion} = 0.7$                              
+  determines whether augmentation is applied. If so, a drift speed is drawn
+  uniformly from $[\sigma_{v,\min},\, \sigma_{v,\max}] = [0.2,\, 1.5]$ LR pixels                           
+  per frame with a maximum displacement of $d_{\max} = 38$ LR pixels.
+  Otherwise the static HR is broadcast across all $T$ frames, keeping the model                            
+  anchored to the non-motion reconstruction task.                                                          
+                                                                                                           
+  The speed range covers a physically plausible span: at 100\,nm/pixel and 40\,fps,                        
+  0.2\,LR\,px/frame corresponds to roughly 800\,nm/s of lateral drift, while
+  1.5\,LR\,px/frame corresponds to 6\,$\mu$m/s — both within the range observed                            
+  in live-cell imaging experiments.                                                                        
+   
+  During evaluation, motion augmentation uses seeded random number generation for                          
+  reproducibility, with the same speed range but a tighter bound of
+  $d_{\max} = 10$ LR pixels to avoid excessive border artefacts in evaluation crops.

@@ -38,84 +38,117 @@
 
 \subsection{Experimental Setup}
 \label{ssec:experimental_setup}
+
 \subsubsection{Model Training Details}
-Following configuration was used in the experiments:
+All TR-MISR experiments use the improved TRNet architecture with a PixelShuffle decoder
+and a lightweight fusion module (1 attention head, depth 1), trained on 8 input frames.
+Models are optimised with Adam using a learning rate of $10^{-3}$ for the encoder/decoder
+and $5 \times 10^{-4}$ for the transformer, reduced on validation-loss plateau.
+The combined L1+Fourier loss is used throughout; 2000 simulated samples are used with a
+90/10 train/validation split. The choice of loss function and decoder were
+validated by ablation; see Appendix~\ref{app:trnet_modifications}.
 
-\begin{itemize}
-  \item TRNet improved model with pixel shuffle decoder
-  \item lightweight fusion module with 1 head and depth of 1
-  \item 8 input frames
-  \item 2000 samples with 90/10 split for training and validation set, respectively
-  \item Reduce learning rate on plateau scheduler
-  \item Adam optimizer
-  \item learning rate for encoder and decoder was 0.001 and transformer 0.0005
-  \item L1 Fourier loss
-\end{itemize}
-
-Choices on model, decoder, transformer size, loss function, learning rate scheduler were selected based 
-Hyperparameter tuning described in Appendix~\ref{app:trnet_modifications}.
-
-The test set comprises of 12 SNR conditions spanning three blinking speeds 
-(fast, medium, slow) and four photon levels (100\%, 80\%, 60\%, 40\% of nominal). 
-In each of the 12 SNR conditions there is 40 samples. 
+The test set comprises 12 SNR conditions spanning three blinking speeds
+(fast, medium, slow) and four photon levels (100\%, 80\%, 60\%, 40\% of nominal),
+with 40 samples per condition (480 test samples total).
 
 \subsection{Evaluation Metrics}
 \label{ssec:metrics}
-%% PSNR, SSIM — standard; note limitations (background pixel dominance).
-%% Decorrelation analysis (Descloux et al. 2019) — spatial resolution estimate.
-%% Re-scaled Pearson Coefficient (RSP) via SQUIRREL (Culley et al. 2018).
-%% TPR / TNR after Li thresholding (Appendix B from Jelle, cited).
 
-RSP under the hood computes error maps and decorrelation analysis computes the achieved resolution
-we believe that these two metrics are enough to evaluate the performance of the model when the 
-GT is available.
-\todo{napisat viac}
+Standard pixel-level metrics such as MSE, PSNR, and SSIM are poorly suited for evaluating
+super-resolution SOFI reconstructions. As noted by~\cite{jelle2024}, SOFI images are
+dominated by near-zero background pixels, so averaging errors over all pixels yields an
+overly optimistic assessment even when fine structural detail is poorly reproduced.
+We instead adopt two metrics used by~\cite{resurf2024}, enabling direct comparability.
+
+\textbf{Resolution-scaled Pearson correlation (RSP).}
+RSP measures the Pearson correlation between a predicted SR image and a reference image,
+after the SR image has been rescaled in both resolution and intensity to match the reference.
+The rescaling corrects for differences in sharpness between prediction and reference, so
+RSP reflects structural agreement rather than penalising the model for being sharper than
+the reference. RSP lies in $[-1,\,1]$; values closer to~1 indicate better structural
+fidelity. When the ground-truth SOFI image is available (simulated test set), it is used
+as the reference.
+
+% \textbf{SQUIRREL.}
+% The resolution and intensity rescaling required to compute RSP is performed by the
+% SQUIRREL algorithm~\cite{culley2018squirrel}. SQUIRREL iteratively estimates a
+% point-spread function (PSF) by convolving the SR image and comparing to the reference
+% until the convolved SR best matches the reference. In addition to the RSP score, SQUIRREL
+% produces pixel-wise RSE (resolution-scaled error) maps that visualise local deviations
+% and are useful for identifying spatial regions where the model introduces artefacts or
+% misses structure.
+
+\textbf{Decorrelation analysis.}
+Following \textcite{descloux2019decorrelation}, spatial resolution is estimated directly
+from each output image without requiring a ground truth.
+The normalised Fourier transform is cross-correlated with the input image through a binary
+circular mask of shrinking radius $r \in [0,1]$.
+A peak in the resulting curve $d(r)$ identifies the highest spatial frequency carrying
+coherent signal. Repeating over a series of high-pass filters and taking the maximum peak
+position $k_c$ gives the cut-off frequency, from which resolution is computed as:
+\begin{equation}
+  \text{Resolution} = \frac{2 \times \text{pixel size}}{k_c}.
+  \label{eq:decorrelation_resolution}
+\end{equation}
+This parameter-free estimate yields the achieved spatial resolution in nanometres,
+complementing the structural-fidelity measure provided by RSP.
+
+RSP is the primary metric reported in all experiments; decorrelation analysis is reported
+where stated. \todo{add decorrelation results once computed}
 
 
 \subsection{Multi-frame Fusion}
 \label{ssec:multi-frame Fusion}
-Despite the model being trained on only 8 frames TR-MISR can naturally attend to multiple frames 
-without being retrained or finetuned.  
-In this experiment we increase the input frames that TR-MISR attends to. We use the same 8 frame
-pretrained 1 head 1 depth model following the experimental setup of subsection~\ref{ssec:experimental_setup}.
 
-Figure \ref{fig:boxplot_rsp_model_comparison} displays boxplots of RSP results over the whole 
-testing dataset. For comparison we included SOFI reconstructions in gray and MISRGRU foundational models from 
-RESURF~\cite{resurf2024}.
+Because TR-MISR's cross-attention aggregator uses a softmax over all $T$ input tokens, it
+is not architecturally constrained to a fixed frame count.
+A model trained on 8 frames can therefore attend to longer sequences at test time without
+retraining or fine-tuning. Sequential GRU fusion does not share this capability as shown in the experiment.
 
-We can conclude that increasing the number of frames in the input to 20 and 30 improves the 
-TR-MISR performance, and outperforms the MISRGRU. 
-
-More detailed results per different sample conditions are shown in Figure \ref{fig:n_frame_fusion}.
-MISRGRU is much more consistent in its reconstruction quality having smaller spreads per different
-SNR condition compared to TRNet. Moreover, MISRGRU achieves better performance on high SNR and 
-faster blinking fluorophores, but when conditions change to longer offtimes and lower ionizations
-producing low SNR samples it seems to have less negative effect on TRNet.
-\todo{claim from trnet paper on better denoising and reconstruction quality}
+To verify this, we evaluate the same 8-frame pretrained 1h1d model at
+$N \in \{8, 20, 30\}$ input frames and compare against the MISRGRU foundational models
+from RESURF~\cite{resurf2024}.
+Figure~\ref{fig:boxplot_rsp_model_comparison} shows RSP aggregated over all 480 test
+samples, with classical SOFI (100-frame) shown in grey as an upper reference.
 
 \begin{figure}[h]
   \centering
   \includegraphics[width=0.8\linewidth]{figures/boxplot_rsp_comparison_models_sofi.png}
-  \caption{Resolution-scaled Pearson correlation for four Transformer configurations with 
-  varying depth and attention heads across SNR conditions. Baseline MISRGRUs (pre-trained 8 and 20 frames) 
-  are shown as for reference.}
+  \caption{RSP distribution for TR-MISR 1h1d at 8, 20, and 30 input frames versus
+  the best MISRGRU 20-frame foundational model from RESURF~\cite{resurf2024}.
+  Classical SOFI (100-frame) is shown in grey as an upper reference.}
   \label{fig:boxplot_rsp_model_comparison}
 \end{figure}
 
+Providing more frames consistently improves TR-MISR: the 20-frame and 30-frame variants
+both exceed the MISRGRU 20-frame baseline in aggregate RSP shown in 
+Figure~\ref{fig:boxplot_rsp_model_comparison}.
+
+This confirms that the attention mechanism generalises to sequences longer than
+those seen during training.
+
+Figure~\ref{fig:n_frame_fusion} breaks results down per SNR condition.
+MISRGRU is more consistent across conditions: its inter-quartile range is tighter at
+high-SNR settings (fast blinking, high photon counts).
+TR-MISR, however, degrades less at low SNR: under slow-blinking and low-photon
+conditions (09--12\_slow), TR-MISR's median RSP stays closer to the 8-frame MISRGRU
+baseline, whereas MISRGRU 8f falls more sharply.
 
 \begin{figure}[h]
   \centering
   \includegraphics[width=0.8\linewidth]{figures/n_frame_comparison.png}
-  \caption{Resolution-scaled Pearson correlation with varying number of input frames 
-  varying depth and attention heads across SNR conditions. Baseline MISRGRUs (pre-trained 8 and 20 frames) 
-  are shown as for reference.}
+  \caption{RSP per SNR condition (blinking speed $\times$ photon level) for TR-MISR 1h1d
+  at 8, 20, and 30 frames and MISRGRU baselines. Conditions are ordered fast\,$\to$\,slow
+  blinking and 100\%\,$\to$\,40\% photon level within each speed group.}
   \label{fig:n_frame_fusion}
 \end{figure}
 
-
-Surprisingly, MISRGRU performs worse on some SNR when the 20-frame model is extended to ingest 30 frames.
-We attribute this to the unnormalised summation in the fusion module's GAP layer. Section 
-\ref{ssec:kbuf_misrgru} elaborates more on this problem.
+Surprisingly, the MISRGRU 20-frame model performs worse on
+several slow-blinking conditions when the input is extended to 30 frames.
+We attribute this to the unnormalised summation in the fusion module's GAP layer, which
+causes the decoder input magnitude to grow with $T$ beyond the range seen during training.
+Section~\ref{ssec:kbuf_misrgru} analyses this effect quantitatively.
 
 
 \subsection{Latency vs Transformer Size Trade-offs}

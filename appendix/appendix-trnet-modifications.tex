@@ -1,9 +1,146 @@
-\chapter{TRNet modifications comparison}
+\chapter{TRNet Architecture and Training Ablations}
 \label{app:trnet_modifications}
 
+This appendix reports the ablation experiments that informed the choice of decoder and
+loss function used in all main-chapter TR-MISR experiments
+(Section~\ref{ssec:experimental_setup}).
+Two design choices were evaluated independently against the chosen baseline:
+First, replacing the PixelShuffle decoder with a transposed-convolution (deconvolution) decoder,
+and secondly, replacing the combined L1+Fourier loss with the Fourier-only loss.
+All other hyperparameters are held fixed at the values described in
+Section~\ref{ssec:experimental_setup}.
 
+%% -------------------------------------------------------
+\section{Decoder: PixelShuffle vs.\ Transposed Convolution}
+\label{app:decoder_ablation}
 
-hoices on model, decoder, loss function, learning rate scheduler, transformer size
+The SOFI super-resolution task requires upscaling LR from $K \times K$ to HR result of size 
+$2*K-7 \times 2*K-7$.
+Two standard decoder approaches were compared:
 
+\begin{itemize}
+  \item \textbf{PixelShuffle} (sub-pixel convolution~\cite{shi2016pixelshuffle}):
+   Originaly used in the TR-MISR paper~cite\cite{TR-MISR-original}. It learns
+    to rearrange channel dimensions into spatial resolution. The non-integer scale is handled
+    by upsampling to an intermediate size followed by a centre crop to match the $2K-7$.
+  \item \textbf{Transposed convolution} (\texttt{ConvTranspose2d}): Is used in MISRGRU models from 
+  RESURF~\cite{resurf2024} learned upsampling via
+    strided deconvolution. Known to produce checkerboard artefacts when the kernel size is
+    not divisible by the stride~\cite{odena2016deconvolution}.
+\end{itemize}
 
-\todo{trnet orig, vs fix, vs improved}
+%% -------------------------------------------------------
+\section{Loss Function: L1+Fourier vs.\ Fourier Only}
+\label{app:loss_ablation}
+
+The Fourier loss~\cite{resurf2024} penalises errors in the amplitude and phase spectra of
+the prediction, encouraging recovery of high-frequency detail that an L1 loss would
+suppress via mean regression. A combined L1+Fourier loss retains the spatial stability of
+L1 while adding spectral supervision. The ablation tests whether the L1 term is redundant
+or provides complementary signal.
+
+%% -------------------------------------------------------
+\section{Results}
+\label{app:ablation_results}
+
+Table~\ref{tab:ablation_aggregate} reports aggregate metrics over all 480 test samples
+(12 SNR conditions $\times$ 40 samples each). Table~\ref{tab:ablation_per_snr} gives
+the RSP breakdown per SNR condition.
+
+\begin{table}[h]
+  \centering
+  \caption{Aggregate metrics for the three configurations over 480 test samples.
+           Bold marks the best value per column.}
+  \label{tab:ablation_aggregate}
+  \begin{tabular}{lccccc}
+    \toprule
+    \textbf{Model} & \textbf{RSP} & \textbf{PSNR (dB)} \\
+    \midrule
+    L1+Fourier, PixelShuffle (baseline) & \textbf{0.8789} & \textbf{23.54} \\
+    Fourier only, PixelShuffle          & 0.8757          & 23.08          \\
+    L1+Fourier, Deconv                  & 0.8770          & 23.43          \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[h]
+  \centering
+  \caption{RSP per SNR condition. Conditions are ordered by blinking speed
+           (fast/medium/slow) and photon level (100\%--40\%). Bold marks the best
+           value per row.}
+  \label{tab:ablation_per_snr}
+  \begin{tabular}{lccc}
+    \toprule
+    \textbf{Condition} & \textbf{L1+F, PS (baseline)} & \textbf{F only, PS} & \textbf{L1+F, Deconv} \\
+    \midrule
+    01 fast p100  & \textbf{0.9013} & 0.8987 & 0.8995 \\
+    02 fast p80   & \textbf{0.8996} & 0.8984 & 0.8988 \\
+    03 fast p60   & 0.9022          & \textbf{0.9024} & 0.9021 \\
+    04 fast p40   & 0.8950          & \textbf{0.8998} & 0.8964 \\
+    \midrule
+    05 medium p100 & \textbf{0.8885} & 0.8881 & 0.8872 \\
+    06 medium p80  & 0.8900          & \textbf{0.8915} & 0.8892 \\
+    07 medium p60  & 0.8845          & \textbf{0.8872} & 0.8839 \\
+    08 medium p40  & 0.8843          & \textbf{0.8861} & 0.8842 \\
+    \midrule
+    09 slow p100   & \textbf{0.8579} & 0.8548 & 0.8545 \\
+    10 slow p80    & \textbf{0.8536} & 0.8483 & 0.8498 \\
+    11 slow p60    & \textbf{0.8556} & 0.8453 & 0.8510 \\
+    12 slow p40    & \textbf{0.8345} & 0.8073 & 0.8269 \\
+    \midrule
+    \textbf{Aggregate} & \textbf{0.8789} & 0.8757 & 0.8770 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Decoder comparison}
+
+The Deconv decoder performs comparably to PixelShuffle at high-SNR conditions (fast
+blinking, high photon counts) but falls behind consistently at medium and slow blinking.
+At the most challenging condition (12\_slow\_p40), the PixelShuffle baseline achieves
+RSP~$=0.835$ versus $0.827$ for Deconv, a gap of $0.008$ that represents a meaningful
+difference in structural fidelity under low-SNR conditions. The aggregate PSNR difference
+is smaller (23.54 vs.\ 23.43\,dB), suggesting the gap is primarily in structural quality
+rather than pixel-level intensity accuracy.
+
+The PixelShuffle advantage likely arises from the non-integer upscaling factor
+($64 \to 121$). Transposed convolution with non-divisible stride/kernel produces periodic
+checkerboard artefacts~\cite{odena2016deconvolution}, which manifest as spurious
+high-frequency patterns in the SR output. These artefacts are not strongly penalised by
+the Fourier amplitude loss (which averages over all frequencies) but do degrade RSP
+because they introduce spatial inaccuracies that do not match the ground-truth SOFI.
+PixelShuffle avoids this by working entirely in the channel domain and cropping to the
+target size, producing smooth outputs without periodic artefacts.
+
+\subsection{Loss function comparison}
+
+The Fourier-only loss matches or slightly exceeds the baseline at fast-blinking, high-SNR
+conditions (conditions 03--04 and 06--08) but degrades substantially at slow-blinking,
+low-photon conditions. At condition 12\_slow\_p40, the Fourier-only model achieves
+RSP~$=0.807$ versus $0.835$ for the baseline, a gap of $0.027$.
+ The gap between baseline and Fourier-only grows with decreasing SNR.
+
+The L1 term therefore provides complementary supervision: it penalises spatial
+misregistration directly, stabilising the model under challenging imaging conditions
+where Fourier-based supervision alone is insufficient.
+
+%% -------------------------------------------------------
+
+\subsection{Visual inspection}
+\todo{compare TRMISR contrast next to lines artefact with Fourier one which doenst have this}
+\todo{ask miyase how to get tif files into thesis as png quality is shitty}
+
+\section{Summary}
+
+\begin{itemize}
+  \item \textbf{PixelShuffle decoder} for the TRNet is preferred over transposed convolution  
+  as it produces consistently higher RSP, especially at low SNR.
+  \item \textbf{L1+Fourier loss} is preferred over Fourier-only for TRNet models. 
+  The L1 term provides 
+  spatial regularisation that prevents the model from placing structures at incorrect
+    positions, with the benefit growing under challenging (slow-blinking, low-photon)
+    conditions.
+\end{itemize}
+
+These findings motivated the use of the PixelShuffle decoder and L1+Fourier loss in all
+TR-MISR experiments reported in Chapter~\ref{ch:results}.
