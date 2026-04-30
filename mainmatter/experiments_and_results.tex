@@ -79,9 +79,9 @@ as the reference.
 % and are useful for identifying spatial regions where the model introduces artefacts or
 % misses structure.
 
-\textbf{Decorrelation analysis.}
-Following \textcite{descloux2019decorrelation}, spatial resolution is estimated directly
-from each output image without requiring a ground truth.
+\textbf{Decorrelation analysis\textcite{descloux2019decorrelation},} is commonly used in 
+SR microscopy to estimate spatial resolution directly from each output image without 
+requiring a ground truth.
 The normalised Fourier transform is cross-correlated with the input image through a binary
 circular mask of shrinking radius $r \in [0,1]$.
 A peak in the resulting curve $d(r)$ identifies the highest spatial frequency carrying
@@ -94,8 +94,15 @@ position $k_c$ gives the cut-off frequency, from which resolution is computed as
 This parameter-free estimate yields the achieved spatial resolution in nanometres,
 complementing the structural-fidelity measure provided by RSP.
 
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.75\linewidth]{figures/decorr_algorithm.png}
+  \caption{}
+  \label{fig:decorr_algorithm}
+\end{figure}
+
 RSP is the primary metric reported in all experiments; decorrelation analysis is reported
-where stated. \todo{add decorrelation results once computed}
+only for the best models of each class. 
 
 
 \subsection{Multi-frame Fusion}
@@ -151,6 +158,79 @@ causes the decoder input magnitude to grow with $T$ beyond the range seen during
 Section~\ref{ssec:kbuf_misrgru} analyses this effect quantitatively.
 
 
+\subsection{Effect of Training Frame Count: 8f vs 20f TRNet}
+\label{ssec:trnet_8f_vs_20f}
+
+To understand whether training on more frames improves TRNet, we trained an additional
+model on 20-frame sequences and compared it against the 8-frame trained model across
+$N \in \{20, 30\}$ input frames at test time.
+Figure~\ref{fig:boxplot_rsp_20fvs8f} shows the RSP distributions for both models.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.8\linewidth]{figures/boxplot_rsp_20fvs8f_trnet.png}
+  \caption{RSP distribution for TRNet trained on 8 frames versus TRNet trained on 20 frames,
+  evaluated at 20, and 30 input frames at test time. The 8f-trained model outperforms
+  the 20f-trained model when both are given 20 or 30 frames on all SNR conditions.}
+  \label{fig:boxplot_rsp_20fvs8f}
+\end{figure}
+
+Counterintuitively, the 8-frame trained model outperforms the 20-frame trained model when
+both are evaluated on 20 and 30 input frames.
+We belive that 8 frames is already sufficient to capture the temporal correlations produced by
+fluorophore blinking: at the simulated acquisition rates and blinking speeds, most
+fluorophores will have switched state at least once within 8 frames, so the cross-attention
+module receives a diverse sample of blink events and can learn a sharp aggregation.
+Training on 20 frames does not provide fundamentally new blinking statistics; it
+predominantly adds redundant observations of the same fluorophore states.
+
+Second, with 20 training frames the attention module may become \emph{over-saturated} at
+individual spatial locations: a fluorophore that is on for many consecutive frames
+produces a cluster of similar tokens that dominates the cross-attention, potentially
+suppressing weaker but informative blink events elsewhere.
+The 8-frame model, having learned to aggregate under a tighter budget, develops attention
+weights that are more robust to token redundancy, which is why it generalises better when
+the sequence is extended at test time.
+
+This finding reinforces the conclusion from Section~\ref{ssec:multi-frame Fusion}: the
+attention mechanism benefits from being given more frames at inference, but the model
+should be \emph{trained} on a short sequence to encourage efficient use of each frame.
+
+\subsection{Decorrelating 8f TRNet model}
+To verify that frame-count generalisation does not degrade output resolution,
+we apply decorrelation analysis~\cite{descloux2019decorrelation} to the SR outputs of each MISRGRU
+variant across all four blinking regimes: fast-high SNR (FH), fast-low SNR (FL),
+slow-high SNR (SH), and slow-low SNR (SL).
+Decorrelation analysis estimates the resolution directly from a single image
+by measuring how quickly spatial autocorrelation decays with increasing frequency,
+yielding a resolution figure in nanometres that is independent of the ground-truth target.
+
+Figure~\ref{fig:imdecor_8f} shows box plots of the estimated resolution for
+model trained on 8 frames but evaluated at 8, 20 and 30 input frames, 
+each evaluated on 12 SNR test conditions grouped into the four regimes above.
+All three variations are able to resolve structure well below the optical diffraction limit
+(${\approx}250$\,nm for visible light), confirming genuine super-resolution across
+all blinking configurations.
+
+Within each model, the fast-blinking conditions yield sharper outputs than the
+slow-blinking ones.
+The FL condition consistently achieves the lowest (best) median resolution
+estimates across all models.
+
+Comparing the three variants, the 8-frame model produces the tightest distributions
+under the SH and SL regimes, while the 20-frame and 30-frame variants
+exhibit marginally wider spread.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.4\linewidth]{figures/imdecor_8f_trained_8_20_30.pdf}
+  \caption{Decorrelation analysis of MISRGRU outputs for models trained on 8, 20,
+           and 30 frames across four blinking/SNR conditions.
+           Lower resolution values indicate sharper, higher-fidelity super-resolved images.
+           All models resolve below the diffraction limit (${\approx}250$\,nm).}
+  \label{fig:imdecor_8f}
+\end{figure}
+
 \subsection{Latency vs Transformer Size Trade-offs}
 \label{ssec:latency_transformer_sizes}
 
@@ -205,7 +285,7 @@ to 4h3d triples the parameter count but increases N=8 latency by 2.4× (87.97\,m
 MISRGRU remains the fastest model at every frame count largerly because of it purely convolutional      
 fusion mechanism, which avoids the quadratic attention computation over the spatial sequence.      
                                                                                               
-Taken together, the RSP scores (Figure~\ref{fig:transformer_sizes}) and latency               
+Looking at both, the RSP scores (Figure~\ref{fig:transformer_sizes}) and latency               
 measurements (Table~\ref{tab:inference_latency}) lead to the same conclusion: the             
 transformer fusion module saturates at minimal capacity. Quality does not improve             
 meaningfully beyond 1h1d, yet latency grows steeply with model size. For real-time            
@@ -214,12 +294,11 @@ only TR-MISR variant that remains feasible. All subsequent experiments therefore
 the 1h1d configuration.
 
 \todo{real data experiments with squirel}
-\todo{decoder ablation}
 \todo{training set size ablation}
 
-\section{MISRGRU modification to support multi output}
+\section{Modifying MISRGRU to for video SR reconstruction}
 
-\subsection{K-buffer MISRGRU modification for faster inference}
+\subsection{Sliding-window MISRGRU modification for faster inference}
 \label{ssec:kbuf_misrgru}
 
 Subsection~\ref{ssec:multi-frame Fusion} claimed that MISRGRU oversaturates the input into the 
@@ -231,9 +310,9 @@ The figure~\ref{fig:kbuf_degradation} shows this empirically with RSP metric as 
 of frames are input into the model. The model is evaluated at 1, 5, 10, 20, 40, 80, and 100 
 input frames.
 
-This experiment showed us that MISRGRU architecture with summative GAP is not well suited for 
-multi-input-multi-output task and thus an architectural change is needed that will normalize 
-the input in the decoder to produce consistent results.
+This experiment showed us that MISRGRU architecture with summative GAP layer is not well 
+suited for multi-input-multi-output task which prompted us to change the architecture to streaming MISRGRU
+which normalizes the input in the decoder to produce consistent results.
 
 \begin{figure}[h]
   \centering
@@ -247,42 +326,37 @@ The GRU hidden state $h_t$ is a cumulative summary of all frames up to time $t$,
 so the fused representation $\mathbf{f} = \sum_{t=0}^{T-1} h_t$ is an unnormalised
 accumulation: the first frame contributes to every $h_t$, giving it $T$-fold weight
 relative to the final frame.
-Moreover, each successive $h_t$ tends to grow in magnitude, making the sum grow with $T$.
-A decoder trained on 20 input frames therefore receives activations of a markedly different
-scale when the number of input frames is changed at test time.
+Moreover, $h_t$ tends to grow in magnitude, making the sum grow with $T$.
+A decoder trained on 20 input frames therefore receives activations of a different
+scale when the number of input frames is extended changed at test time.
 
 To verify this claim empirically, we measured the L2-norm of the tensor passed to
-each model's decoder on 20 real microscopy patches from the testing set,
+each model's decoder ($f$) on 20 real microscopy patches from the testing set,
 changing the number of input frames $T \in \{8, 20, 30\}$.
 The results are reported in Table~\ref{tab:decoder_input_norm}.
-For both MISRGRU variants the decoder-input norm scales far beyond the linear
-expectation (ratios of ${\approx}4\times$ and ${\approx}2\times$ versus the ideal
-$2.5\times$ and $1.5\times$, respectively), confirming the saturation
-hypothesis. 
-By contrast, TR-MISR's fusion output remains almost constant across all
+For both MISRGRU variants the decoder-input norm scales beyond the linear
+expectation, confirming the saturation hypothesis. 
+In contrast, TR-MISR's fusion output remains almost constant across all
 three frame counts (ratios of $1.02\times$ and $1.01\times$), because the
 cross-attention softmax redistributes weight across frames rather than accumulating
-magnitude.
+magnitude. Interestingly 8 frame MISRGRU at $T=8$ reaches approximately same L2 norm as the
+20 frame MISRGRU at $T=20$ indicating that both models decoder learnt to input similar tensor.
 
 \begin{table}[h]
   \centering
-  \caption{Mean L2-norm of the decoder input on 20 test patches ($256\times256$)
-           as the number of input frames $T$ varies.
-           Ratios quantify how much the magnitude changes relative to the
-           model's training frame count.
-           Linear scaling would predict ratios of $20/8{=}2.5$ and $30/20{=}1.5$.}
+  \caption{Mean L2-norm of the decoder input $f$ on 20 test patches ($256\times256$)
+           as the number of input frames $T$ varies.}
   \label{tab:decoder_input_norm}
   \begin{tabular}{lrrrcc}
     \toprule
     \textbf{Model} & \textbf{Train $T$}
       & $\|\mathbf{f}\|_2\ (T{=}8)$
       & $\|\mathbf{f}\|_2\ (T{=}20)$
-      & $\|\mathbf{f}\|_2\ (T{=}30)$
-      & $\frac{T{=}20}{T{=}8}$ / $\frac{T{=}30}{T{=}20}$ \\
+      & $\|\mathbf{f}\|_2\ (T{=}30)$ \\
     \midrule
-    MISRGRU        & 20 & 671  & 2\,741 & 5\,786 & $4.1\times$ / $2.1\times$ \\
-    MISRGRU        &  8 & 2\,227 & 8\,194 & 12\,420 & $3.7\times$ / $1.5\times$ \\
-    TR-MISR (1h1d) &  8 & 194  & 198    & 200    & $1.02\times$ / $1.01\times$ \\
+    MISRGRU        & 20 & 671  & 2\,741 & 5\,786  \\
+    MISRGRU        &  8 & 2\,227 & 8\,194 & 12\,420 \\
+    TR-MISR (1h1d) &  8 & 194  & 198    & 200     \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -297,8 +371,7 @@ Furthermore, when $T$ exceeds the training length, positional embeddings are lin
 interpolated, allowing the model to generalise to larger input
 sets without retraining and train faster and more efficient with less input frames.
 
-\todo{decorrelation analysis}
-\todo
+
 
 
 \section{Streaming MISRGRU}
@@ -306,116 +379,177 @@ sets without retraining and train faster and more efficient with less input fram
 Streaming models are evaluated by feeding frames one at a time from the test set and measuring 
 RSP between the current SR output and the ground truth SOFI image. 
 We report RSP metric as a function of the number of accumulated frames at checkpoints 
-$\{1, 5, 10, 20, 40, 80, 100\}$, per each of  12 SNR conditions and all test samples. 
+$\{8, 20, 40, 100\}$, per each of 12 SNR conditions and all test samples. 
 Two batch-mode baselines are included as horizontal reference lines: 
-the 8-frame MISRGRU foundation model  the 20-frame MISRGRU foundation model.
+the 8-frame MISRGRU foundation model the 20-frame MISRGRU foundation model.
 
-\subsection{Results}
+The following ablations and hyperparameter tunings were performed:
+
+\textbf{Summary}
+
+Table~\ref{tab:streaming_ablation_summary} summarises the outcome of each ablation.
+The final streaming MISRGRU configuration uses LLN35 TBPTT supervision, Fourier-only loss,
+a single 48-channel ConvGRU, and a transposed-convolution decoder.
+
+\begin{table}[h]
+  \centering
+  \caption{Streaming MISRGRU ablation choices and their outcomes.}
+  \label{tab:streaming_ablation_summary}
+  \begin{tabular}{llll}
+    \toprule
+    \textbf{Ablation} & \textbf{Options tested} & \textbf{Winner} & \textbf{Key finding} \\
+    \midrule
+    TBPTT window & LLN10 vs.\ LLN35 & LLN35
+      & Lower loss $\neq$ higher RSP; broader supervision wins \\
+    Loss function & L1+Fourier vs.\ Fourier & Fourier
+      & L1 bias toward background suppresses fine structure \\
+    GRU width & $2\times24$ch vs.\ $1\times48$ch & $1\times48$ch
+      & Wider hidden state wins despite slower convergence \\
+    Decoder & PixelShuffle vs.\ deconv & Deconv
+      & Exact output size avoids boundary waste from centre-crop \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \begin{figure}[h]
   \centering
-  \includegraphics[width=\linewidth]{figures/streaming_pearson_vs_frames.png}
-  \caption{Streaming MISRGRU Pearson correlation as a function of accumulated input frames. Left: aggregate over all 12 SNR conditions. Right: per-SNR breakdown (fast/medium/slow blinking at three photon levels). Dashed horizontal lines mark the 8-frame (0.866) and 20-frame (0.905) batch baselines. Models with near-zero Pearson (T10, \texttt{loss\_all\_frames}, \texttt{lr\_1e-3}, \texttt{lr\_3e-4}) collapsed during training and are shown for completeness.}
-  \label{fig:streaming_pearson}
+  \includegraphics[width=1.0\linewidth]{figures/snr_conditions_streaming_models.png}
+  \caption{Performance of two best streaming modelsmodels
+and SOFI. Each column corresponds to a different SNR (photons/frame): 100(high-SNR) or 40 (low-SNR), and
+and blinking conditions (on time/ off time in ms): 10/600 (fast) or 10/2400 (slow). 
+Corresponded resolution estimations and RSP scores of
+the models for different conditions. RSP analysis is compared with reference ground-truth (GT),
+ a FH: Fast high SNR, FL: Fast low SNR,
+SH: Slow high SNR, SL: Slow low SNR}
+  \label{fig:lln35_vs_largergrufourier}
+\end{figure}
+\todo{after greenlight we are planning to retrain one final one using all params
+on Miyases account for 48h until fully converge as from the tensorboard logs
+the models seem to benefit from more training}
+
+\begin{figure}[h]
+  \centering
+  \begin{subfigure}[t]{0.48\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/imdecor_resurf_models.png}
+    \caption{Decorrelation analysis of RESURF models (AVG, SOFI, Model-20f, Model-8f).}
+    \label{fig:imdecor_resurf}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/imdecor_comparison_lln35.pdf}
+    \caption{Decorrelation analysis of our trained models across SNR conditions.}
+    \label{fig:imdecor_lln35}
+  \end{subfigure}
+  \caption{Side-by-side decorrelation analysis: RESURF baseline models (left) vs.\ our
+           models (right) across FH, FL, SH, and SL blinking/SNR conditions.
+           Lower resolution values indicate sharper super-resolved images.}
+  \label{fig:imdecor_comparison}
 \end{figure}
 
-Figure~\ref{fig:streaming_pearson} shows the frame-accumulation curves for all evaluated streaming variants. Three key observations stand out.
 
-\textbf{Matching the batch baseline.} The best-performing streaming variant, \texttt{streaming\_fourier}, reaches a Pearson of \textbf{0.9089} at 100 accumulated frames, slightly \emph{exceeding} the 20-frame batch baseline (0.9051). The \texttt{streaming\_1st} variant (L1\_Fourier loss, supervision on the first frame of each chunk) achieves 0.9062 at 80 frames. Both surpass the 8-frame batch baseline from as few as 10 accumulated frames onwards, meaning that within the first 10/40\,fps = 0.25\,s of acquisition, the streaming model already outperforms the 8-frame RESURF model from~\cite{jelle2024}.
 
-\textbf{K-buffer convergence.} The \texttt{kbuf\_K20} variant reaches the 20-frame batch Pearson (0.9051) exactly at checkpoint 20 and does so more rapidly than the hidden-state streaming models. This confirms that with a buffer of 20 frames, the sliding-window re-fusion approach perfectly replicates the batch model. However, Pearson degrades beyond checkpoint 20 (to 0.77 at checkpoint 40, 0.63 at checkpoint 80), because frames older than 20 steps are dropped from the buffer while the model was trained with fresh initialisation, creating a mismatch at longer sequences. The K-buffer approach is therefore best suited to applications where exactly $K$ frames are available and a rapid result is required.
 
-\textbf{Hyperparameter sensitivity.} Four variants failed completely, producing near-zero Pearson across all checkpoints: \texttt{T10} (TBPTT chunk size 10), \texttt{loss\_all\_frames} (supervise every frame), \texttt{lr\_1e-3} (high learning rate), and \texttt{lr\_3e-4} (moderately high learning rate). The \texttt{T10} failure reveals a fundamental constraint: with only 10 frames per TBPTT chunk, the GRU does not accumulate sufficient temporal context before gradient updates are applied. The model collapses to predicting a spatially uniform output that minimises the loss in expectation over the whole sequence. A minimum chunk size of 25 frames (\texttt{T25}, Pearson 0.870) is necessary for stable training, with 25 frames being sufficient for the GRU to register several fluorophore on/off cycles before backpropagating. The learning rate failures (lr\_1e-3 and lr\_3e-4) are consistent with a gradient instability that is exacerbated by the recurrent credit assignment over long sequences; \texttt{lr\_1e-4} converges reliably to 0.876.
 
-\subsection{Practical Implications for Real-Time Imaging}
+% \subsection{Practical Implications for Real-Time Imaging}
 
-These results have direct implications for live-cell imaging deployment. The \texttt{kbuf\_K20} model offers \emph{deterministic} 20-frame-quality reconstruction after exactly 20 acquired frames, with one SR output per subsequent frame at the acquisition frame rate. At 40\,fps, this corresponds to a 0.5\,s warm-up period followed by continuous SR output — sufficient for most live-cell protocols.
+% These results have direct implications for live-cell imaging deployment. The \texttt{kbuf\_K20} model offers \emph{deterministic} 20-frame-quality reconstruction after exactly 20 acquired frames, with one SR output per subsequent frame at the acquisition frame rate. At 40\,fps, this corresponds to a 0.5\,s warm-up period followed by continuous SR output — sufficient for most live-cell protocols.
 
-The \texttt{streaming\_fourier} model offers \emph{improving} quality as more frames accumulate, making it better suited to longer recordings or post-acquisition replay. Its slight outperformance of the batch model (Pearson +0.004) suggests that frame-by-frame Fourier supervision acts as an implicit regulariser, encouraging the hidden state to maintain high-frequency information at each step rather than deferring reconstruction quality to the end of the sequence.
+% The \texttt{streaming\_fourier} model offers \emph{improving} quality as more frames accumulate, making it better suited to longer recordings or post-acquisition replay. Its slight outperformance of the batch model (Pearson +0.004) suggests that frame-by-frame Fourier supervision acts as an implicit regulariser, encouraging the hidden state to maintain high-frequency information at each step rather than deferring reconstruction quality to the end of the sequence.
 
-Both streaming models exceed the 8-frame RESURF baseline within 10 accumulated frames, confirming that streaming deployment does not require sacrificing the reconstruction quality established by~\cite{jelle2024}.
+% Both streaming models exceed the 8-frame RESURF baseline within 10 accumulated frames, confirming that streaming deployment does not require sacrificing the reconstruction quality established by~\cite{jelle2024}.
 
-\subsection{Alignment Module Ablation}
+\subsection{Streaming Inference Latency}
+\label{ssec:streaming_latency}
+
+The architectural distinction between batch and streaming inference has a direct consequence
+on throughput: the batch MISRGRU consumes $N$ frames and outputs a single SR
+image, whereas the streaming variant emits one SR output for every input frame.
+Models were benchmarked on an NVIDIA RTX A5000 using $512\times512$ input frames,
+5 warmup passes, and 20 timed passes.
+
+\begin{table}[h]
+  \centering
+  
+  \begin{tabular}{lrccc}
+    \hline
+    \textbf{Model} & \textbf{Params}
+      & \textbf{Total / seq (ms)}
+      & \textbf{SR outputs}
+      & \textbf{Per SR frame (ms)} \\
+    \hline
+    Streaming MISRGRU      &  95,073 & $225.90 \pm 0.42$ & 20 & \textbf{11.29} \\
+    Streaming Larger GRU   & 131,361 & $240.44 \pm 0.67$ & 20 & 12.02 \\
+    Streaming MISRGRU DPA  & 151,996 & $349.26 \pm 0.86$ & 20 & 17.46 \\
+    \hline
+    Batch MISRGRU (ref.)   &  95,073 & $170.29$          &  1 & 170.29 \\
+    \hline
+  \end{tabular}
+  \caption{Streaming model parameter counts and PyTorch inference latency on $512\times512$
+           images (mean over 20 runs, sequence length $N=20$). The \emph{per-frame} column
+           divides the total sequence time by the number of SR outputs produced.
+           Batch MISRGRU (reproduced from Table~\ref{tab:inference_latency}) is included
+           as a reference; it produces only one SR output from 20 input frames.}
+  \label{tab:streaming_latency}
+\end{table}
+
+All three streaming variants are dramatically more efficient when it comes to producing reconstructed outputs,
+while reaching the same accuracy as batched MISRGRU at 20th frame and improving the accuracy with more frames.
+The base Streaming MISRGRU takes only 11.32\,ms to produce each SR frame, 
+MISRGRU's 170.29\,ms-per-output at the same frame count.
+This makes streaming MISRGRU variants very efficient in reconstructing the whole acquisition.
+
+The overal reconstruction of 20 frames is 50ms slower compared to batch MISRGRU but this is due calling
+decoding layer 20 times rather than once.
+
+Tje next section~\ref{sec:alignment_ablation} discusses effects of modified MISRGRU with DPA alignment
+and finetuning the baseline streaming MISRGRU to reconstruct motion.
+
+
+% This improvement arises not from a reduction in computation but from amortising the
+% processing cost over all 20 outputs: the convolutional GRU processes one frame at a time
+% in a fixed-cost forward pass, spreading the total 226\,ms across 20 SR reconstructions
+% instead of accumulating 20 frames before a single decode.
+
+
+
+
+\section{Motion reconstruction}
 \label{sec:alignment_ablation}
+With ultrafast (11ms inference per frame) streaming MISRGRU we decided to explore motion
+reconstruction capabilities. 
 
 To evaluate whether explicit inter-frame alignment improves the streaming GRU, we trained
-two additional variants incorporating the DPA and Warp+RFFT alignment modules described in
-Section~\ref{sec:dpa_arch}.
-In both cases the alignment is applied to the previous hidden state $\mathbf{h}_{t-1}$
-before the ConvGRU update, while the encoder features $\mathbf{f}_t$ are passed to the GRU
-unchanged.
+an additional variant incorporating the Deformable Phace-space Alignment module (DPA) inspired by \cite{qiao2025dpatisr}.  
 
-\textbf{An unexpected cross-architecture finding.}
-During evaluation, a weight mismatch was discovered that constitutes an informative ablation
-in its own right.
-When the weights of a Warp+RFFT-trained model were loaded into the DPA (deformable convolution)
-architecture, PyTorch reported the following key mismatches:
+The exact implementation details are described in 
+
+
+
+\paragraph{Real-time deployment feasibility.}
+Live-cell fluorescence microscopy typically acquires at 40\,fps (25\,ms budget per frame).
+A streaming model must return one SR output within this budget to avoid back-pressure on
+the acquisition pipeline.
+All three streaming models satisfy this constraint:
 
 \begin{itemize}
-  \item \emph{Missing} (DPA model, randomly initialised):
-        \texttt{fusion.dpa.dcn.*} — the deformable convolution and its offset/mask
-        prediction network.
-  \item \emph{Unexpected} (silently discarded):
-        \texttt{fusion.dpa.warp.flow\_net.*} — the flow-estimation network from the
-        Warp+RFFT model.
+  \item \textbf{Streaming MISRGRU} (11.32\,ms) leaves 54\% of the 25\,ms budget unused,
+        providing headroom for data transfer, post-processing, or display.
+  \item \textbf{Streaming Larger GRU} (12.02\,ms) achieves similar throughput with a
+        38\% larger model, confirming that the extra capacity buys marginal reconstruction
+        quality without compromising real-time operation.
+  \item \textbf{Streaming MISRGRU DPA} (17.46\,ms) includes the deformable alignment
+        module (Section~\ref{sec:alignment_ablation}), which adds approximately 6\,ms
+        of overhead. The model still meets the 40\,fps budget, but its quality advantage
+        over the base model was shown to be negligible (Section~\ref{sec:alignment_ablation}),
+        making the extra cost unjustified.
 \end{itemize}
 
-The RFFT module (\texttt{fusion.dpa.rfft.*}) and all ConvGRU weights transferred correctly
-because both architectures share the same RFFT alignment layer.
-The result is a \emph{hybrid} model that uses the RFFT alignment from the Warp+RFFT
-training run and a zero-initialised deformable convolution — effectively a model with RFFT
-alignment only, without any learned warp or deformable offsets.
-
-Visually, this hybrid outperformed both the correctly-loaded Warp+RFFT model and the
-correctly-loaded DPA model: the Warp+RFFT model produced sharp but occasionally
-mis-registered outputs, while the DPA model produced noticeably blurred reconstructions.
-The hybrid produced consistently sharper, better-localised filaments across all SNR conditions.
-
-\textbf{Analysis.}
-We attribute this to a failure mode of deformable convolution in the absence of explicit
-correspondence supervision.
-Both models were trained with the pure Fourier loss $\mathcal{L}_\text{Fourier}$,
-which penalises errors in both the amplitude and phase spectra of the prediction.
-Because Fourier amplitude loss directly penalises high-frequency attenuation, simple
-mean-regression blurring (the classic failure mode under L1/L2 losses) is actively
-discouraged: a low-pass output would incur large amplitude loss at high spatial frequencies.
-The artefacts observed in the DPA model are therefore not mean-regression blurs; they are
-the result of a different and more subtle failure.
-
-The DCN predicts per-pixel offsets and modulation masks from the hidden state and encoder
-features, but receives no direct supervision on whether those offsets correspond to
-geometrically correct inter-frame correspondences.
-The Fourier loss measures the \emph{global} frequency spectrum of the entire output image;
-it provides no localised feedback about which spatial regions contributed incorrectly.
-With $3\times3\times C$ degrees of freedom per spatial location, the offset network can
-converge to offsets that reduce the global Fourier error while pulling hidden-state content
-from geometrically incorrect positions in specific spatial regions.
-The result is \emph{spatial smearing}: the decoded output mixes signal from nearby-but-wrong
-locations, producing ghost edges and loss of localisation.
-In the frequency domain, this manifests as a complex pattern of broadband amplitude and
-phase errors distributed across many frequencies simultaneously — not as a clean
-high-frequency rolloff — making it relatively indistinguishable from reconstruction noise
-under the global Fourier objective, and therefore weakly penalised.
-
-By contrast, the RFFT and FeatureWarp alignment modules are \emph{rigid} transforms:
-the RFFT module applies a single global phase shift per channel (sub-pixel translation only),
-and the warp module applies a single pre-computed displacement per pixel without aggregating
-from multiple source locations.
-Neither module has the flexibility to mix content from spatially distinct positions,
-so neither can produce smearing regardless of the loss landscape.
-
-When the DCN is zero-initialised and its offset network has not been trained, it reduces to
-an identity-like regular convolution at the default sampling grid, passing features through
-without spatial distortion.
-The hybrid model therefore benefits from the RFFT alignment learned during Warp+RFFT training
-while avoiding the incorrect-offset artefacts of an optimised DCN.
-
-\textbf{Implications.}
-These findings suggest that the DCN alignment stage, as configured, is counter-productive for
-SOFI microscopy: the reconstruction loss does not provide sufficient correspondence
-supervision to prevent the deformable offsets from learning geometrically incorrect solutions.
-The result motivates two directions: (i)\ supplementing the training loss with an explicit
-flow supervision signal (e.g.\ optical flow pseudo-labels from a pre-trained motion
-estimator) to guide the DCN offsets toward correct correspondences; (ii)\ adopting
-RFFT-only or rigid-warp alignment as a simpler, correspondence-free alternative that achieves
-sub-pixel correction without introducing the smearing risk of per-pixel offset learning.
+Compared to the original SOFI pipeline, which requires on the order of hundreds of frames
+and several seconds of off-line processing, the streaming deployment at 11--17\,ms per SR
+output represents an acceleration of well over two orders of magnitude, consistent with the
+400-fold latency reduction reported for the foundational batch model by~\cite{resurf2024}.
+Crucially, the streaming model achieves this at \emph{every frame} rather than at the end
+of a fixed acquisition window, enabling truly continuous super-resolution output
+synchronised with the microscope acquisition clock.

@@ -124,23 +124,3 @@ The L1 term therefore provides complementary supervision: it penalises spatial
 misregistration directly, stabilising the model under challenging imaging conditions
 where Fourier-based supervision alone is insufficient.
 
-%% -------------------------------------------------------
-
-\subsection{Visual inspection}
-\todo{compare TRMISR contrast next to lines artefact with Fourier one which doenst have this}
-\todo{ask miyase how to get tif files into thesis as png quality is shitty}
-
-\section{Summary}
-
-\begin{itemize}
-  \item \textbf{PixelShuffle decoder} for the TRNet is preferred over transposed convolution  
-  as it produces consistently higher RSP, especially at low SNR.
-  \item \textbf{L1+Fourier loss} is preferred over Fourier-only for TRNet models. 
-  The L1 term provides 
-  spatial regularisation that prevents the model from placing structures at incorrect
-    positions, with the benefit growing under challenging (slow-blinking, low-photon)
-    conditions.
-\end{itemize}
-
-These findings motivated the use of the PixelShuffle decoder and L1+Fourier loss in all
-TR-MISR experiments reported in Chapter~\ref{ch:results}.

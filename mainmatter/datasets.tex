@@ -1,0 +1,191 @@
+\chapter{Dataset}
+\label{ch:datasets}
+
+This chapter describes the datasets used for training and evaluating the TRNet and MISRGRU architectures.
+All experiments use the same synthetic dataset that was created by Komen and Tekpinar, which was used 
+in the thesis~\cite{jelle2024} and subsequently in the RESURF paper~\cite{resurf2024}.
+No modifications were made to the simulation pipeline or to the raw simulated data.
+
+In this work we motion augmentated simulated data to train and evaluate the network capability on reconstructing motion.
+Section~\ref{sec:motion_augment} describes how motion augmentation was achieved.
+
+\section{Synthetic Data }
+\label{sec:synthetic}
+
+Fluorescence microscopy experiments are time-consuming and thus obtaining
+ground-truth super-resolved images from real data is hard. For this reason, a simulation-based 
+dataset was used where different conditions could be controlled such as blinking speed and 
+background noise. 
+The synthetic dataset provides paired low-resolution (LR)
+fluorescence stacks of 100 frames and corresponding high-resolution (HR) SOFI targets.
+
+\subsection{Simulated Data Conditions}
+\label{sec:simulation_pipeline}
+
+To build a dataset that generalises across different experimental conditions,
+simulations were run under 12 distinct signal-to-noise settings formed by the
+combination of three blinking-speed regimes and four photon-level fractions \cite{komen2024}:
+
+\begin{itemize}
+  \item \textbf{Blinking speeds}: fast, medium, and slow, corresponding to
+        fluorophore on/off-times of approximately 600ms, 1200ms, and 2000ms respectively.
+  \item \textbf{Photon levels}: 100\%, 80\%, 60\%, and 40\% of the nominal ion photon count,
+        progressively reducing the peak signal intensity.
+\end{itemize}
+
+
+\section{Motion Augmentation}
+\label{sec:motion_augment}
+
+The synthetic dataset described above contains no sample motion: every frame in a
+sequence depicts the same field of view, with fluorophores at fixed coordinates
+emitting stochastic blinks.
+This is appropriate for the batch MISRGRU and TRNet models, which output a single
+SR image from a fixed set of $N$ frames.
+The streaming MISRGRU (Section~\ref{sec:streaming_arch}), however, is designed to
+produce a super-resolved image at \emph{every} time step, making it directly
+relevant to live-cell microscopy where biologists monitor dynamic processes
+in real time.
+
+In live-cell imaging, sample drift on the order of tens of nanometres per second
+is common and unavoidable.
+Organelles such as vesicles and mitochondria can translate across the field of view
+at 0.5--5\,\textmu m/s~\cite{tang2013fast}.
+A model trained exclusively on static data has no incentive to track the current
+field position: the correct answer is always the same single HR reconstruction. Our experiments showed staticaly trained 
+models produced blurs where they summed all locations of fluorophores rather then reconstructed them at new location. \todo{ref experiment showing ghost blurs}  
+Motion augmentation transforms each static training sample into a sequence with a
+plausible slow drift trajectory and supplies a matching per-frame HR target,
+forcing the model to localise the field of view at each time step.
+Because paired moving ground-truth data cannot be obtained experimentally, all
+motion is synthesised from the existing static dataset.
+An earlier approach considered perturbing microtubule segment angles frame-by-frame
+using an Ornstein-Uhlenbeck process; this was abandoned owing to the complexity
+of re-running the full simulation pipeline for each trajectory.
+
+\subsection{Sinusoidal Drift Trajectory}
+\label{sec:trajectory_gen}
+
+Rather than a random walk, which can accumulate arbitrarily large displacements,
+the trajectory is modelled as an independent sinusoid on each spatial axis:
+%
+\begin{equation}
+  \tau_a(t) = A_a \sin\!\left(2\pi f_a\,t + \varphi_a\right), \qquad a \in \{y,\,x\}.
+  \label{eq:sinusoid}
+\end{equation}
+%
+The normalised frequency is $f_a = n_a / T$, where
+$n_a \sim \mathrm{Uniform}(1.5,\,3.5)$ is the number of oscillation cycles over the
+$T$-frame sequence, and $\varphi_a \sim \mathrm{Uniform}(0,\,2\pi)$ is a random phase
+that breaks any correlation between axes.
+The amplitude $A_a$ is derived from a user-specified peak velocity $v$
+(in LR pixels per frame): since the instantaneous peak velocity of a sinusoid is
+$2\pi f_a A_a$, setting
+%
+\begin{equation}
+  A_a = \min\!\left(\frac{v}{2\pi f_a},\;d_{\max}\right)
+  \label{eq:amplitude}
+\end{equation}
+%
+guarantees that the maximum drift speed equals exactly $v$, with $d_{\max}$ as a
+hard bound that prevents large zero-padded border regions.
+This parameterisation decouples biological realism, controlled by $v$, from
+trajectory shape, controlled by $n_a$ and $\varphi_a$.
+The sinusoidal model also naturally captures the direction reversals that
+are characteristic of organelle motion constrained by cytoskeletal tracks.
+
+\begin{algorithm}[h]
+\caption{Sinusoidal drift trajectory generation}
+\label{alg:trajectory}
+\begin{algorithmic}[1]
+  \Require $T$ (frames), $v$ (peak velocity in LR\,px/frame),
+           $d_{\max}$ (max displacement per axis)
+  \For{each axis $a \in \{y,\,x\}$}
+    \State Draw $n_a \sim \mathrm{Uniform}(1.5,\,3.5)$;\quad set $f_a \leftarrow n_a / T$
+    \State Draw $\varphi_a \sim \mathrm{Uniform}(0,\,2\pi)$
+    \State $A_a \leftarrow \min\!\left(v\,/\,(2\pi f_a),\;d_{\max}\right)$
+    \State $\boldsymbol{\tau}_{:,a} \leftarrow A_a\,\sin(2\pi f_a\,\mathbf{t} + \varphi_a)$,
+           \quad $\mathbf{t} = [0,\,1,\,\ldots,\,T{-}1]^\top$
+  \EndFor
+  \State \Return $\boldsymbol{\tau} \in \mathbb{R}^{T \times 2}$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Frame Shifting and Per-Frame Targets}
+\label{sec:frame_shifting}
+
+Given a trajectory $\boldsymbol{\tau}$, each LR frame $\mathbf{L}[t]$ is shifted by
+$(dy_t, dx_t) = \boldsymbol{\tau}[t]$ using bilinear interpolation with zero-padding.
+The corresponding HR target is shifted by the same displacement scaled by the
+upsampling ratio $s = H_\text{hr}/H = 121/64 \approx 1.89$, consistent with the
+$2n-7$ output size.
+
+\begin{algorithm}[h]
+\caption{Per-frame shifting for motion augmentation}
+\label{alg:shift}
+\begin{algorithmic}[1]
+  \Require $\mathbf{L}$ ($T \times H \times W$), $\mathbf{Y}$ ($H_\text{hr} \times W_\text{hr}$),
+           $\boldsymbol{\tau}$ ($T \times 2$)
+  \State $s_y \leftarrow H_\text{hr} / H$, \quad $s_x \leftarrow W_\text{hr} / W$
+  \For{$t = 1, \ldots, T$}
+    \State $(dy_t, dx_t) \leftarrow \boldsymbol{\tau}[t]$
+    \State $\hat{\mathbf{l}}_t \leftarrow \mathrm{shift}(\mathbf{L}[t],\;(dy_t,\,dx_t))$
+           \hfill\textit{// bilinear, zero-pad}
+    \State $\hat{\mathbf{y}}_t \leftarrow \mathrm{shift}(\mathbf{Y},\;(dy_t s_y,\,dx_t s_x))$
+           \hfill\textit{// bilinear, zero-pad}
+  \EndFor
+  \State \Return $\hat{\mathbf{L}}$ ($T \times H \times W$),\;
+                 $\hat{\mathbf{Y}}$ ($T \times H_\text{hr} \times W_\text{hr}$)
+\end{algorithmic}
+\end{algorithm}
+
+The critical consequence is that each frame $t$ receives its own HR ground-truth
+$\hat{\mathbf{y}}_t$.
+In the static case, a single HR image is broadcast across all time steps, so the
+model can ignore temporal position entirely.
+With motion augmentation, the loss $\mathcal{L}(\hat{Y}_t,\,\hat{\mathbf{y}}_t)$
+forces the streaming model to predict the HR image at the \emph{current} position
+of the field of view rather than a single consensus reconstruction.
+
+\subsection{Relevance to Physical Speed}
+\label{sec:speed_calibration}
+
+The peak velocity $v$ in LR pixels per frame maps to a physical drift speed via
+%
+\begin{equation}
+  v_\text{real}\;[\mu\text{m/s}]
+    \;=\; v\;[\text{px/frame}]
+    \;\times\; r\;[\text{frame/s}]
+    \;\times\; p\;[\mu\text{m/px}],
+  \label{eq:speed_calibration}
+\end{equation}
+%
+where $r = 100$\,Hz is the camera acquisition rate and $p = 0.1$\,\textmu m/px
+(100\,nm per pixel, consistent with the simulated dataset described in
+Section~\ref{sec:synthetic}).
+The configured speed range $[v_{\min},\,v_{\max}] = [0.2,\,1.5]$\,LR\,px/frame
+therefore spans
+%
+\begin{align*}
+  v_{\min} &= 0.2 \times 100 \times 0.1 = 1.0\; \textmu \text{m/s}, \\
+  v_{\max} &= 1.5 \times 50 \times 0.1 = 7.5\;  \text{\textmu m/s}.
+\end{align*}
+%
+This range covers the full biological drift envelope reported for vesicles and
+mitochondria (0.5--5\,\textmu m/s~\cite{tang2013fast}), with 7.5\,\textmu m/s
+providing headroom for fast kinesin-driven transport.
+Both bounds are exposed as configuration parameters (\texttt{speed\_min},
+\texttt{speed\_max}), making it straightforward to restrict training to slow
+passive diffusion or to extend coverage to faster motor-driven motion.
+
+\subsection{Integration into Training}
+\label{sec:motion_training_integration}
+
+Motion augmentation is applied on-the-fly inside the
+\texttt{StreamingTensorDataset} data loader.
+For each training sample, a motion augmentation is applied with a probability of $p_\text{motion} = 0.7$
+This way model remembers to reconstruct static samples.
+When augmentation is applied, peak velocity is drawn uniformly from $[0.2,\,1.5]$\,LR\,px/frame,
+a trajectory is generated via Algorithm~\ref{alg:trajectory}, and the frames and
+targets are shifted via Algorithm~\ref{alg:shift} with $d_{\max} = 38$\,LR\,px.
+Otherwise the static HR image is kept across all $T$ frames.

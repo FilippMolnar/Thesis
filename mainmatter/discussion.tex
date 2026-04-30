@@ -27,6 +27,34 @@
 %% TensorRT: degradation vs. baseline model (I.2 from Jelle).
 %% Bottleneck: window of N frames; many-to-many architecture would resolve this.
 
+\subsection{Generalisation of the GRU Hidden State Beyond the Training Horizon}
+
+A notable and somewhat surprising finding from the streaming MISRGRU evaluation is that
+reconstruction quality --- measured by RSP --- continued to improve as the number of
+frames accumulated at inference time grew from 20 to 100, well beyond the chunk sizes
+used during truncated backpropagation through time (TBPTT).
+During training, gradients were prevented from flowing across chunk boundaries, so the
+model was never directly optimised for dependencies longer than \texttt{chunk\_size} frames.
+Yet at inference time the GRU hidden state is never reset, and the model continues to
+benefit from accumulating additional context.
+
+This suggests that the ConvGRU hidden state acts as a compressed, continuously updated
+summary of blinking statistics that generalises beyond the temporal horizon it was trained on.
+The explanation is consistent with how GRUs are known to operate: the update and reset gates
+learn to selectively retain or discard information, and a well-trained gating mechanism can
+maintain useful long-term running statistics even when the network never received a training
+signal to do so explicitly.
+In the SOFI context, more frames directly provide more independent realisations of the
+fluorophore blinking process, and the GRU implicitly integrates this additional evidence
+at each step via its hidden state, even beyond the supervised horizon.
+
+Practically, this means the streaming model can be deployed with a longer warm-up window
+than it was trained on, trading slightly higher initial latency for improved reconstruction
+fidelity once enough frames have been processed.
+It also motivates future work on explicitly training with longer TBPTT windows or with
+a curriculum that gradually increases the chunk length, which may unlock further gains
+in the long-frame regime.
+
 \section{Limitations and Future Work}
 %% 1. Live-cell experiment validation (not conducted in this thesis).
 %% 2. Many-to-many (streaming) architecture for true single-frame temporal res.
@@ -34,3 +62,19 @@
 %% 4. Self-supervised or few-shot adaptation to new cell types.
 %% 5. Composite SSIM loss (marked TODO in codebase).
 %% 6. FlashAttention scaling: larger patch size / more frames.
+
+\subsection{Noise-Prior Fine-Tuning for Microscope Adaptation}
+
+A promising direction for adapting a synthetically trained model to a specific
+microscope is to fine-tune the encoder on a short sequence of blank frames —
+frames acquired with the laser on but no sample present, capturing only
+detector noise and autofluorescence.
+Since the correct SR output for such frames is zero, the model can be
+penalised for any non-zero prediction, forcing the encoder to recalibrate
+its noise threshold to the actual instrument.
+This one-shot update, requiring no labelled data and no additional
+experimental effort, could be applied as a pre-processing step immediately
+before reconstruction.
+This is related to test-time adaptation~\cite{wang2021tent}, but with an
+unambiguous supervision signal: any model activation on a blank frame is
+by definition a false positive.
