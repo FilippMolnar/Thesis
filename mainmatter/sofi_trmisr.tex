@@ -351,32 +351,28 @@ In live-cell imaging, organels can move at
 0.5--5\,\textmu m/s~\cite{tang2013fast} depending on a structure. This corresponds to 
 $\approx$0.05--0.5 pixels per frame, our pixel size (100\,nm) and acquisition rate of 100\,fps.
 
-To make the streaming model robust to this, we introduce \emph{motion augmentation} during
+To traing the streaming model robust motion, we introduce \emph{motion augmentation} during
 training.
-For each training sequence, with probability $p = 0.7$ a smooth drift trajectory is sampled
-for both the $x$ and $y$ axes independently.
-Each axis trajectory follows a sinusoidal pattern:
-\begin{equation}
-  d_\text{axis}(t) = A\,\sin(2\pi f t + \varphi),
-  \label{eq:trajectory}
-\end{equation}
-where the frequency $f$ is sampled uniformly in $[1.5/T,\, 3.5/T]$, the phase $\varphi$
-uniformly in $[0, 2\pi)$, and the amplitude $A$ is set so the instantaneous speed
-$\dot{d}(t)$ stays in the range $[v_\text{min},\, v_\text{max}] = [0.2,\, 1.5]$ pixels/frame.
-This covers the realistic biological range from slow axonal transport ($\sim$0.1 px/frame)
-to fast organelle movement ($\sim$1.5 px/frame).
-Sinusoids are used because they produce smooth, bounded drift that stays within the image field
-without accumulating bias in one direction.
+For each training sequence, with probability $p = 0.7$ a sinusoidal drift trajectory is
+sampled independently for each spatial axis.
+Sinusoids produce smooth, bounded motion with no directional bias, and their frequency
+and amplitude are sampled to keep the instantaneous speed in the range 0.2--1.5
+pixels/frame.
+This range intentionally exceeds the biological estimate above, providing robustness to
+faster stage drift and to higher-fps acquisition settings where the same physical speed
+maps to more pixels per frame.
 
-Each LR frame $\mathbf{l}_t$ is shifted by the displacement $d(t)$ using bilinear interpolation,
-and the static HR ground truth is shifted by the same displacement scaled by the upsampling
-factor $\gamma \approx 1.984$.
-This produces per-frame HR targets $\hat{\mathbf{Y}}_t$ that match the shifted field of view at
-each time step, so the model learns to localise the correct position rather than always predicting
-the same static reconstruction.
-The remaining 30\% of training batches keep the original static data, which prevents the model
-from forgetting to reconstruct well on non-moving sequences.
+Augmentation is applied on-the-fly: at each training step, the $256{\times}256$ source
+LR frame is shifted by the trajectory displacement using bilinear interpolation, and a
+fixed $180{\times}180$ center crop is extracted equivalent to sliding a crop window
+across the source.
+The static HR ground truth is shifted by the same displacement scaled by the upsampling
+and center-cropped to the matching HR size, producing a
+per-frame HR target that matches the shifted field of view.
+The remaining 30\% of training sequences use the unshifted static patches, which
+prevents the model from degrading on non-moving data.
 
+\todo{add image describing sinusoidal shift and crop}
 
 
 

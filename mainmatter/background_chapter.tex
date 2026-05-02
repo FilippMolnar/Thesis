@@ -1,101 +1,138 @@
 %% ============================================================
 \chapter{Background}
 \label{ch:background}
-%% Target length: ~20 pages
 
-% \section{Fluorescence Microscopy}
-% \label{sec:fluorescence}
+\section{Fluorescence Microscopy}
+\label{sec:fluorescence}
 
-% Fluorescence microscopy enables the visualisation of biological structures at the 
-% molecular level by labelling specific targets with fluorescent molecules: \emph{fluorophores}.
-% They emit light upon excitation. 
-% A fluorophore absorbs a photon at the excitation wavelength and re-emits a 
-% lower-energy (longer-wavelength) photon; 
-% a dichroic filter separates the emitted fluorescence from the excitation light, 
-% so only signal from labelled structures reaches the detector. 
-% This selectivity, combined with single-molecule sensitivity, makes fluorescence 
-% microscopy the tool of choice for live-cell imaging of subcellular dynamics. 
-% The following subsections introduce the physical principles that govern image 
-% formation and establish why a temporal sequence of frames 
-% rather than a single snapshot is necessary for high-resolution fluorescence imaging.
+Fluorescence microscopy enables the visualisation of biological structures at the 
+molecular level by labelling specific targets with fluorescent molecules: \emph{fluorophores}.
+They emit light upon excitation with a laser. 
+A fluorophore absorbs a photon at the excitation wavelength and re-emits a 
+lower-energy (longer-wavelength) photon. 
+Dichroic filter is used to separate the emitted fluorescence from the excitation light, 
+so only signal from labelled structures reaches the sensor. 
+This way the emitted photons from single molecules can be captured by camera,
+enabling live-cell imaging of subcellular dynamics.
 
-% \subsection{Diffraction Limit}
-% \label{subsec:diffraction}
+\subsection{Diffraction Limit}
+\label{subsec:diffraction}
 
-% The spatial resolution of any far-field optical microscope is fundamentally bounded by the wave nature of 
-% light. When a point source of light passes through a circular aperture (the objective lens), 
-% it produces an \emph{Airy disk} diffraction pattern rather than a perfect point image. 
-% Lord Rayleigh formalised this as a resolution criterion: two point sources can just be resolved when the 
-% principal maximum of one pattern coincides with the first minimum of the other~\cite{jelle2024}. 
-% In the lateral plane this gives the minimum resolvable distance:
-% \begin{equation}
-%     d_{xy} = 0.61\,\frac{\lambda}{\mathrm{NA}},
-%     \label{eq:rayleigh}
-% \end{equation}
-% where $\lambda$ is the emission wavelength and $\mathrm{NA} = n\sin\theta$ is the numerical aperture of the objective, determined by the refractive index $n$ of the immersion medium and the half-angle $\theta$ of the light cone collected by the lens. For typical visible-light fluorescence ($\lambda \approx 500$--$700\,\mathrm{nm}$, $\mathrm{NA} \approx 1.4$), this yields $d_{xy} \approx 200$--$300\,\mathrm{nm}$.
+The spatial resolution of any far-field optical microscope is fundamentally bounded 
+by the wave nature of light. 
+When a point source of light passes through a circular aperture (the objective lens), 
+it produces an \emph{Airy disk} diffraction pattern rather than a perfect point image. 
+Lord Rayleigh formalised this as a resolution criterion: two point sources can just be resolved when the 
+principal maximum of one pattern coincides with the first minimum of the other~\cite{born1999principles}. 
+In the lateral plane this gives the minimum resolvable distance:
+\begin{equation}
+    d_{xy} = 0.61\,\frac{\lambda}{\mathrm{NA}},
+    \label{eq:rayleigh}
+\end{equation}
+where $\lambda$ is the emission wavelength and $\mathrm{NA} = n\sin\theta$ is the 
+numerical aperture of the objective, determined by the refractive index $n$ of the 
+immersion medium and the half-angle $\theta$ of the light cone collected by the lens. 
+For typical visible-light fluorescence ($\lambda \approx 500$--$700\,\mathrm{nm}$, $\mathrm{NA} \approx 1.4$), this yields $d_{xy} \approx 200$--$300\,\mathrm{nm}$.
 
-% Many biologically relevant structures are far smaller: microtubules have a diameter of $\approx 25\,\mathrm{nm}$, mitochondria membranes are $\approx 10\,\mathrm{nm}$ thick, and individual protein complexes are 5--20\,nm in size. These structures are entirely hidden within the diffraction blur. Overcoming the diffraction limit is therefore not merely an imaging improvement — it is a prerequisite for visualising the molecular machinery of the cell.
+Many biologically relevant structures are far smaller than this limit. Microtubules 
+($\approx$18\,nm), and mitochondrial membranes ($\approx$10\,nm),
+~\cite{beese1987microtubule,shami_2021_threedimensional} and are entirely
+hidden within the diffraction blur, making super-resolution a prerequisite for
+visualising subcellular processes.
 
-% \subsection{Point Spread Function}
-% \label{subsec:psf}
+\subsection{Point Spread Function}
+\label{subsec:psf}
 
-% The complete response of an optical system to a single point emitter is described by the \emph{Point Spread Function} (PSF), denoted $v(r)$, where $r$ is the spatial coordinate. In the focal plane the PSF approximates an Airy disk; a Gaussian approximation $v(r) \propto \exp(-r^2/2\sigma^2)$ is commonly used for analytical and computational purposes, with $\sigma \approx d_{xy}/2.35$~\cite{jelle2024}.
+The \emph{Point Spread Function} (PSF) $v(r)$ describes how a microscope blurs a single point
+emitter into a diffraction-limited spot. In the focal plane it approximates an Airy disk, which is
+commonly modelled as a Gaussian $v(r) \propto \exp(-r^2/2\sigma^2)$~\cite{jelle2024}.
+The observed image is a superposition of shifted, scaled PSFs from every emitter:
+\begin{equation}
+    y(r,t) = \sum_k v(r - r_k)\,\epsilon_k\,s_k(t) + n(r,t),
+    \label{eq:psf_conv}
+\end{equation}
+where emitter $k$ is at position $r_k$ with brightness $\epsilon_k$ and time-varying on/off state
+$s_k(t)$, and $n(r,t)$ is detector noise.
+Because $v(r)$ is \emph{the same at every time step}, the temporal variation in $y(r,t)$ comes
+entirely from the blinking terms $s_k(t)$ — a fact that both SOFI and the deep-learning models in
+this thesis exploit.
 
-% Because a biological sample contains many emitters, the observed image $y(r,t)$ at position $r$ and time $t$ is the convolution of the true fluorophore density $x(r,t)$ with the PSF:
-% \begin{equation}
-%     y(r,t) = x(r,t) * v(r) = \sum_k v(r - r_k)\,\epsilon_k\,s_k(t),
-%     \label{eq:psf_conv}
-% \end{equation}
-% where the sum runs over all emitters $k$ at position $r_k$, $\epsilon_k$ is molecular brightness, and $s_k(t)$ is the time-varying on/off state. Discretising to the camera pixel grid and adding Gaussian noise yields the full acquisition model (see~\cite{jelle2024} §2.1.3 for derivation):
-% \begin{equation}
-%     \mathbf{y}_t = M_q\!\left(U(\mathbf{x}_t)\right) + \mathbf{n}_t,
-%     \label{eq:acquisition}
-% \end{equation}
-% where $U : \mathbb{R}^L \to \mathbb{R}^M$ is the PSF convolution operator, $M_q : \mathbb{R}^L \to \mathbb{R}^M$ is a downsampling operator, and $\mathbf{n}_t$ is additive Gaussian noise. Crucially, the PSF $v(r)$ is \emph{shared across all frames}: the same blur is applied to every time step $t$. This time-invariance means that the cross-frame correlation structure of the image sequence encodes the fluorophore blinking statistics — a fact that SOFI and deep learning both exploit.
+\subsection{The Deconvolution Problem}
+\label{subsec:deconv}
 
-% \subsection{The Deconvolution Problem}
-% \label{subsec:deconv}
+Recovering the true structure from the observed blured image requires 
+inverting the convolution: \emph{deconvolution problem}. 
+This is ill-posed: in the frequency domain, 
+$\hat{Y}(\omega) = \hat{H}(\omega)\hat{X}(\omega) + \hat{N}(\omega)$, 
+so the naive inverse $\hat{X} = \hat{Y}/\hat{H}$ amplifies noise catastrophically at 
+frequencies where $|\hat{H}(\omega)|$ is small whcih is near and beyond the diffraction 
+cut-off. Classical regularised methods like Wiener filtering, 
+Lucy-Richardson deconvolution stabilise the inversion but require accurate 
+knowledge of the PSF and yield a single restored image per frame, exploiting no 
+temporal information.
 
-% Recovering the true image $\mathbf{x}_t$ from the observed $\mathbf{y}_t$ requires inverting the convolution in Eq.~\eqref{eq:acquisition} — the \emph{deconvolution problem}. This is ill-posed: in the frequency domain, $\hat{Y}(\omega) = \hat{H}(\omega)\hat{X}(\omega) + \hat{N}(\omega)$, so the naive inverse $\hat{X} = \hat{Y}/\hat{H}$ amplifies noise catastrophically at frequencies where $|\hat{H}(\omega)|$ is small (i.e., near and beyond the diffraction cut-off). Classical regularised methods — Wiener filtering, Lucy-Richardson deconvolution — stabilise the inversion but require accurate knowledge of the PSF and yield a single restored image per frame, exploiting no temporal information.
+% A learned approach is attractive for two reasons. 
+% First, the mapping from $\{\mathbf{y}_t\}$ to an SR image can be learnt end-to-end 
+% from paired training data, bypassing explicit PSF estimation. 
+% Second, and more importantly, a model that processes \emph{multiple frames jointly} 
+% can exploit the temporal correlation structure of fluorophore blinking,
+%  structure that single-frame deconvolution is blind to. 
+%  This is the central insight behind SOFI (§\ref{sec:sofi_bg}) and the deep-learning 
+%  models discussed in §\ref{sec:dl_bg}.
+\todo{write more}
 
-% A learned approach is attractive for two reasons. First, the mapping from $\{\mathbf{y}_t\}$ to an SR image can be learnt end-to-end from paired training data, bypassing explicit PSF estimation. Second, and more importantly, a model that processes \emph{multiple frames jointly} can exploit the temporal correlation structure of fluorophore blinking — structure that single-frame deconvolution is blind to. This is the central insight behind SOFI (§\ref{sec:sofi_bg}) and the deep-learning models discussed in §\ref{sec:dl_bg}.
+\subsection{Super-Resolution Techniques}
+\label{subsec:sr_techniques}
 
-% \subsection{Super-Resolution Techniques}
-% \label{subsec:sr_techniques}
+Super-resolution (SR) microscopy techniques overcome the diffraction limit by different physical principles. Table~\ref{tab:sr_techniques} summarises the main families along a dimension that is novel relative to prior treatments~\cite{jelle2024}: whether the temporal structure of the acquired frames is exploitable by a deep-learning model.
 
-% Super-resolution (SR) microscopy techniques overcome the diffraction limit by different physical principles. Table~\ref{tab:sr_techniques} summarises the main families along a dimension that is novel relative to prior treatments~\cite{jelle2024}: whether the temporal structure of the acquired frames is exploitable by a deep-learning model.
+\begin{table}[htbp]
+\centering
+\caption{Comparison of super-resolution fluorescence microscopy techniques. The final column indicates whether the temporal frame sequence carries exploitable structure for a multi-frame deep learning model.}
+\label{tab:sr_techniques}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{>{\raggedright}p{2.8cm} >{\raggedright}p{2.4cm} >{\raggedright}p{1.5cm} >{\raggedright}p{2.8cm} p{4cm}}
+\hline
+\textbf{Technique} & \textbf{Resolution} & \textbf{Frames} & \textbf{Hardware} & \textbf{DL-exploitable temporal structure} \\
+\hline
+STED~\cite{sted1994}       & $<\!50\,\mathrm{nm}$   & Single & Depletion laser   & None (single-frame) \\[2pt]
+SIM~\cite{sim2000}         & $\approx120\,\mathrm{nm}$ & 9--15  & Patterned illum.  & Minimal (fixed pattern) \\[2pt]
+PALM/STORM~\cite{palm2006,storm2006} & 10--20\,nm & $10^5$--$10^6$ & Widefield & Sparse localisation sequence \\[2pt]
+SOFI~\cite{sofi2009}       & $\approx\!\sqrt{n}$-fold & 100--500 & Widefield & Dense correlated fluctuations \\[2pt]
+SRRF~\cite{srrf2016}       & $\approx\!60\,\mathrm{nm}$ & $\sim$100 & Widefield & Statistical, less structured \\
+\hline
+\end{tabular}
+\end{table}
 
-% \begin{table}[htbp]
-% \centering
-% \caption{Comparison of super-resolution fluorescence microscopy techniques. The final column indicates whether the temporal frame sequence carries exploitable structure for a multi-frame deep learning model.}
-% \label{tab:sr_techniques}
-% \renewcommand{\arraystretch}{1.25}
-% \begin{tabular}{>{\raggedright}p{2.8cm} >{\raggedright}p{2.4cm} >{\raggedright}p{1.5cm} >{\raggedright}p{2.8cm} p{4cm}}
-% \hline
-% \textbf{Technique} & \textbf{Resolution} & \textbf{Frames} & \textbf{Hardware} & \textbf{DL-exploitable temporal structure} \\
-% \hline
-% STED~\cite{sted1994}       & $<\!50\,\mathrm{nm}$   & Single & Depletion laser   & None (single-frame) \\[2pt]
-% SIM~\cite{sim2000}         & $\approx120\,\mathrm{nm}$ & 9--15  & Patterned illum.  & Minimal (fixed pattern) \\[2pt]
-% PALM/STORM~\cite{palm2006,storm2006} & 10--20\,nm & $10^5$--$10^6$ & Widefield & Sparse localisation sequence \\[2pt]
-% SOFI~\cite{sofi2009}       & $\approx\!\sqrt{n}$-fold & 100--500 & Widefield & Dense correlated fluctuations \\[2pt]
-% SRRF~\cite{srrf2016}       & $\approx\!60\,\mathrm{nm}$ & $\sim$100 & Widefield & Statistical, less structured \\
-% \hline
-% \end{tabular}
-% \end{table}
+\textbf{Illumination-based methods.} STED microscopy~\cite{sted1994} uses a doughnut-shaped depletion beam to suppress emission outside the very centre of the PSF, shrinking the effective PSF to below 50\,nm. SIM~\cite{sim2000} illuminates the sample with patterned light to encode high-frequency structural information into the detectable bandwidth, doubling lateral resolution to $\approx$120\,nm. Both require specialised hardware and high illumination intensity, limiting their applicability to live, sensitive samples.
 
-% \textbf{Illumination-based methods.} STED microscopy~\cite{sted1994} uses a doughnut-shaped depletion beam to suppress emission outside the very centre of the PSF, shrinking the effective PSF to below 50\,nm. SIM~\cite{sim2000} illuminates the sample with patterned light to encode high-frequency structural information into the detectable bandwidth, doubling lateral resolution to $\approx$120\,nm. Both require specialised hardware and high illumination intensity, limiting their applicability to live, sensitive samples.
+\textbf{Single-molecule localisation microscopy (SMLM).} PALM~\cite{palm2006} and STORM~\cite{storm2006} stochastically activate sparse subsets of emitters so that individual molecules can be precisely localised by fitting the PSF. Repeating this over $10^5$--$10^6$ frames and accumulating localisations yields a super-resolved map with 10--20\,nm precision. The temporal sequence here is a sparse localisation stream; deep-learning approaches have been proposed for fast localisation but the frame count remains prohibitively large for real-time live-cell imaging.
 
-% \textbf{Single-molecule localisation microscopy (SMLM).} PALM~\cite{palm2006} and STORM~\cite{storm2006} stochastically activate sparse subsets of emitters so that individual molecules can be precisely localised by fitting the PSF. Repeating this over $10^5$--$10^6$ frames and accumulating localisations yields a super-resolved map with 10--20\,nm precision. The temporal sequence here is a sparse localisation stream; deep-learning approaches have been proposed for fast localisation but the frame count remains prohibitively large for real-time live-cell imaging.
-
-% \textbf{Fluctuation-based methods.} SOFI~\cite{sofi2009} and SRRF~\cite{srrf2016} work with densely blinking fluorophores on standard widefield microscopes. Rather than localising individual molecules, they exploit the \emph{statistical correlation} of intensity fluctuations across the frame sequence. SOFI computes spatial cumulants of the blinking time-series to produce a SR image with $\sqrt{n}$-fold ($n$-th order) resolution improvement, extended to $n$-fold with deconvolution. SRRF assesses local radial symmetry at each frame to estimate emitter positions sub-pixel.
+\textbf{Fluctuation-based methods.} SOFI~\cite{sofi2009} and SRRF~\cite{srrf2016} work with densely blinking fluorophores on standard widefield microscopes. Rather than localising individual molecules, they exploit the \emph{statistical correlation} of intensity fluctuations across the frame sequence. SOFI computes spatial cumulants of the blinking time-series to produce a SR image with $\sqrt{n}$-fold ($n$-th order) resolution improvement, extended to $n$-fold with deconvolution. SRRF assesses local radial symmetry at each frame to estimate emitter positions sub-pixel.
 
 
-% \subsection{Live-Cell Imaging}
-% \label{subsec:livecell}
+\subsection{Live-Cell Imaging}
+\label{subsec:livecell}
 
-% Live-cell fluorescence imaging faces a fundamental three-way trade-off between spatial resolution, temporal resolution, and sample health~\cite{jelle2024}. Higher resolution generally requires more photons (brighter illumination or more frames), which increases phototoxicity and photobleaching — both of which damage or kill the cell and destroy the fluorescent label. Temporal resolution (how rapidly frames are acquired) also competes directly with frame count: acquiring 500 frames at 40\,fps takes 12.5 seconds, during which fast cellular events — vesicle trafficking ($\sim$1\,$\mu$m/s), mitochondrial fusion, or cytoskeletal remodelling — may have substantially evolved or left the field of view.
+Live-cell fluorescence imaging faces a fundamental three-way trade-off between spatial
+resolution, temporal resolution, and sample health~\cite{jelle2024}. 
+Higher resolution generally requires more photons taken, which increases 
+phototoxicity and photobleaching: damaging the cell by and destroy the fluorescent 
+label. Temporal resolution (how rapidly frames are acquired) also competes directly 
+with frame count: acquiring 500 frames at 40\,fps takes 12.5 seconds, 
+during which fast cellular events — vesicle trafficking ($\sim$1\,$\mu$m/s), 
+mitochondrial fusion, or cytoskeletal remodelling — may have substantially evolved 
+or left the field of view.
 
-% SOFI is advantaged among SR techniques in this trade-off: it operates at low illumination intensity (reducing phototoxicity) and on a standard widefield microscope (no specialised hardware). However, requiring 100--500 frames for a reliable cumulant estimate still imposes a temporal bottleneck of several seconds to minutes at typical camera frame rates. For tracking fast organelle dynamics, this is unacceptably slow. Reducing the required frame count to 8--20 while preserving SR quality is therefore the key engineering challenge — and the direct motivation for replacing the explicit cumulant computation with a learned deep-learning model~\cite{jelle2024,resurf2024}.
+SOFI is advantaged among SR techniques in this trade-off: it operates at low 
+illumination intensity (reducing phototoxicity) and on a standard widefield 
+microscope (no specialised hardware). 
+However, requiring 100--500 frames for a reliable cumulant estimate still imposes a 
+temporal bottleneck of several seconds to minutes at typical camera frame rates. 
+For tracking fast organelle dynamics, this is unacceptably slow. 
+Reducing the required frame count to 8--20 while preserving SR quality is therefore 
+the key engineering challenge — and the direct motivation for replacing the explicit 
+cumulant computation with a learned deep-learning model~\cite{jelle2024,resurf2024}.
 
 % %% ============================================================
 % \section{Super-Resolution Optical Fluctuation Imaging (SOFI)}
