@@ -1,80 +1,120 @@
 %% ============================================================
-\chapter{Discussion}
-\label{ch:discussion}
-%% Target length: ~8 pages
+\chapter{Discussion}                                                                   
+\label{ch:discussion}                                                                  
+                                                                                        
+\section{Does parallel attention improve upon recurrent fusion?}
+                                                                                        
+The main motivation of this work was to test whether replacing the sequential       
+ConvGRU fusion in MISRGRU~\cite{resurf2024} with a Transformer's parallel
+self-attention would yield a meaningful improvement in either reconstruction quality 
+or inference speed.
+The results give a nuanced answer: in aggregate RSP, TRNet (1h1d) is competitive with
+but does not consistently outperform the 20-frame MISRGRU foundational model on fast blinking and high SNR conditions. However the 
+attention advantage starts to show when models are evaluated on worse conditions where TRNet achieved consistently higher RSP. 
+But on raw latency it is slower (262\,ms vs.\ 170\,ms at $N{=}20$,
+Table~\ref{tab:inference_latency}).                                                    
+The attention mechanism does not, therefore, give a clear answer wether to use it over convolutional
+recurrence.                                                                            
 
-\section{Transformer vs. Recurrent Fusion for SOFI}
-%% Interpret architectural comparison results.
-%% Advantages of parallel attention: richer cross-frame blinking correlation?
-%% Or: does the ConvGRU's inductive bias (spatial locality) suit microscopy better?
-%% Discuss learnable embedding token: what does it learn?
+What it does provide is a structurally different aggregation mechanism.                      
+The cross-attention softmax normalises over all input tokens, so the magnitude of the
+fused representation remains stable regardless of how many frames are presented at inference      
+(Table~\ref{tab:decoder_input_norm}).
+MISRGRU's summative GAP layer accumulates magnitude super-linearly, with decoder-input 
+norms growing from 671 at $T{=}8$ to 5\,786 at $T{=}30$ for the 20-frame foundational  
+model.
+TR-MISR's corresponding norms stay approximately the same across the same range.           
+This difference translates directly into a practical advantage: a TRNet     
+model trained on 8 frames can be evaluated on 20 or 30 frames at test time with no     
+architectural change, whereas extending MISRGRU beyond its training length causes progressive reconstruction degradation.                                  
+Positional embeddings are linearly interpolated for the longer sequence, so the model
+generalises gracefully.                                                                
+This property is valuable in practice: shorter training sequences reduce compute cost
+and convergence time, while the researcher still has the option of feeding more frames   
+for improved quality at inference.
+                                                                                        
+An additional finding reinforces this picture.                                         
+Counterintuitively, a TRNet trained on 8 frames outperforms one trained on 20 frames
+when both are evaluated on 20- or 30-frame inputs                                      
+(Figure~\ref{fig:boxplot_rsp_20fvs8f}).
+We believe this happened because the training under the   
+8-frame constraint forces the attention module to assign meaningful and more discriminative    
+weights to every available frame.
+At 20 training frames, repeated observations of the same fluorophore state produce     
+clusters of similar tokens that can saturate the cross-attention and suppress weaker   
+but informative blink events.
+The 8-frame model, having learned efficient aggregation under scarcity, transfers this 
+robustness to longer sequences.                                                        
+This suggests a practical training strategy: train on the shortest frame count
+that captures the relevant blinking statistics, which at the simulated acquisition     
+rates corresponds to 8 frames.
+                                                                                        
+Ablating the Transformer fusion across four configurations (1h1d, 2h2d, 4h3d, 8h6d)    
+shows that RSP does not improve meaningfully beyond 1h1d (Figure~\ref{fig:transformer_sizes})
+, while latency grows steeply: going from 1h1d to 4h3d triples the parameter count 
+but increases $N{=}8$ latency by 2.4$\times$. 
+This indicates that the encoder and decoder, rather than the fusion module, are the
+architectural bottleneck for reconstruction quality.                          
+Future improvements should focus on the encoder and decoder blocks (e.g.\ deeper residual
+blocks, deformable convolutions) rather than larger transformers.                      
 
-\section{Fourier-Domain Loss for Super-Resolution}
-%% Confirm / extend Jelle's finding.
-%% Composite loss: worthwhile complexity?
+\section{Practicality of Streaming MISRGRU}                                
+                
+While the TR-MISR vs.\ MISRGRU comparison answers the thesis's primary architectural   
+question, but the streaming MISRGRU variant addresses a separate and arguably more
+impactful problem: real-time super-resolution during microscope acquisitions.
+The batch model produces one SR output per $N$ acquired frames; the streaming model
+produces one output per frame, amortising the processing cost over the entire $N$ Frame 
+acquisition.
+At $N{=}20$ frames on a 512$\times$512 field of view, streaming MISRGRU takes 11.29\,ms
+per SR output compared to 170.29\,ms for the batch model a $15\times$ improvement in
+per-output latency.
 
-\section{Sensitivity to Background Artefacts}
-%% Critical limitation identified by Jelle; does the Transformer model share it?
-%% Impact of background subtraction pre-processing step.
+This matters for live-cell imaging because it decouples temporal resolution from model 
+frame count.                   
+The streaming model produces one SR image every acquired frame, so its temporal
+resolution equals the acquisition rate.                                                
+Streaming RSP converges to the batch-model value by the 20th accumulated frame
+(Figure~\ref{fig:lln35_vs_largergrufourier}), and continues to improve beyond that     
+point as the GRU accumulates more context. This capability the batch model (MISRGRU and TRNet)
+lack entirely.
 
-\section{Practical Constraints and Data Scarcity}
-%% Small real-data regime (≥4 measurements); augmentation strategy.
-%% Training set size threshold: diminishing returns.
-%% Pre-training on synthetic data as foundation.
+Careful design of training the streaming model was required. Truncated backpropagation through time
+proved to be working. TBPTT improved training speed model saw warmed up hidden state 
+which enabled generalization over longer sequences. 
 
-\section{Real-Time Feasibility}
-%% Achieved fps vs. Jelle's 4.85 fps benchmark.
-%% TensorRT: degradation vs. baseline model (I.2 from Jelle).
-%% Bottleneck: window of N frames; many-to-many architecture would resolve this.
+\section{Motion reconstruction robustness}                                         
+                
+Real-time imaging of moving structures was achieved through with a              
+motion-augmented training and we compared finetuning the baseline model with adding 
+Deformable Phase-space Alignment (DPA) module.                                                                                
+At 0.2\,px/frame motion speed the DPA variant achieved similar RSP score to its static reference
+in the fast-high SNR condition, Finetuning the model also worked, however, during visual inspection
+DPA shower less ghost artefacts.
 
-\subsection{Generalisation of the GRU Hidden State Beyond the Training Horizon}
+Importantly, the motion-finetuned models retain competitive performance on static data 
+(Figure~\ref{fig:motion_snr_static}), with degradation concentrated in the slow-low SNR
+conditions where temporal averaging is most valuable.                                     
+This trade-off is expected: a model regularised to handle inter-frame displacement     
+cannot simultaneously exploit the long-range temporal correlation that static,    
+slow-blinking acquisitions provide.                                                    
+For deployment, the static streaming model is prefered when the sample is
+known to be stationary or the drift is below the model's tolerance; the                
+motion-finetuned or DPA variant should be selected when the specimen exhibits visible  
+drift relative to the field of view.                                                 
+                                                                                        
+\section{Limitations and future directions}
 
-A notable and somewhat surprising finding from the streaming MISRGRU evaluation is that
-reconstruction quality --- measured by RSP --- continued to improve as the number of
-frames accumulated at inference time grew from 20 to 100, well beyond the chunk sizes
-used during truncated backpropagation through time (TBPTT).
-During training, gradients were prevented from flowing across chunk boundaries, so the
-model was never directly optimised for dependencies longer than \texttt{chunk\_size} frames.
-Yet at inference time the GRU hidden state is never reset, and the model continues to
-benefit from accumulating additional context.
+First, all quantitative results are obtained on a synthetic microtubule dataset
+generated with the simulation pipeline from~\cite{resurf2024}.
+Transfer to real experimental data is not completed in this thesis.
 
-This suggests that the ConvGRU hidden state acts as a compressed, continuously updated
-summary of blinking statistics that generalises beyond the temporal horizon it was trained on.
-The explanation is consistent with how GRUs are known to operate: the update and reset gates
-learn to selectively retain or discard information, and a well-trained gating mechanism can
-maintain useful long-term running statistics even when the network never received a training
-signal to do so explicitly.
-In the SOFI context, more frames directly provide more independent realisations of the
-fluorophore blinking process, and the GRU implicitly integrates this additional evidence
-at each step via its hidden state, even beyond the supervised horizon.
+A one promising direction for adapting synthetically trained models to a specific
+microscope is to fine-tune the network on a sequence of blank background frames, 
+that capture only detector noise and autofluorescence. This way the model could 
+quickly (one-shot update) adapt to noise levels and new PSF of the imaged structure. 
 
-Practically, this means the streaming model can be deployed with a longer warm-up window
-than it was trained on, trading slightly higher initial latency for improved reconstruction
-fidelity once enough frames have been processed.
-It also motivates future work on explicitly training with longer TBPTT windows or with
-a curriculum that gradually increases the chunk length, which may unlock further gains
-in the long-frame regime.
 
-\section{Limitations and Future Work}
-%% 1. Live-cell experiment validation (not conducted in this thesis).
-%% 2. Many-to-many (streaming) architecture for true single-frame temporal res.
-%% 3. Higher-order SOFI (n > 2) with adapted decoder.
-%% 4. Self-supervised or few-shot adaptation to new cell types.
-%% 5. Composite SSIM loss (marked TODO in codebase).
-%% 6. FlashAttention scaling: larger patch size / more frames.
-
-\subsection{Noise-Prior Fine-Tuning for Microscope Adaptation}
-
-A promising direction for adapting a synthetically trained model to a specific
-microscope is to fine-tune the encoder on a short sequence of blank frames —
-frames acquired with the laser on but no sample present, capturing only
-detector noise and autofluorescence.
-Since the correct SR output for such frames is zero, the model can be
-penalised for any non-zero prediction, forcing the encoder to recalibrate
-its noise threshold to the actual instrument.
-This one-shot update, requiring no labelled data and no additional
-experimental effort, could be applied as a pre-processing step immediately
-before reconstruction.
-This is related to test-time adaptation~\cite{wang2021tent}, but with an
-unambiguous supervision signal: any model activation on a blank frame is
-by definition a false positive.
+Finally, training with higher-order SOFI targets could improve the spatial resolution further.
+This, however, requires to simulate more data and create the higher-order SOFI targets.
+Decoder layers can be easily adapted to estimate higher-order cumulants.
