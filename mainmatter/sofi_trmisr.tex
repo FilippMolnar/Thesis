@@ -339,7 +339,9 @@ and the deformable convolution weight is identity-initialised (centre tap set to
 This ensures the model starts as a standard streaming GRU with no alignment applied and
 learns the correction transforms progressively during training.
 On the first frame, when no $\mathbf{h}_{t-1}$ is available, the DPA stage is skipped
-entirely and the GRU is initialised from a zero hidden state.
+entirely and the GRU is initialised from a zero hidden state. This way we can reuse  
+trained weights and only finetune the model. Section~\ref{sec:alignment_ablation} evaluates
+the reconstruction accuracy of DPA MISRGRU.
 
 \subsection{Motion Augmentation Training}
 \label{sec:motion_training}
@@ -378,6 +380,7 @@ prevents the model from degrading on non-moving data.
 
 \section{Loss Functions}
 \label{sec:loss}
+\todo{check this}
 
 The mathematical definitions of the loss functions are given in Section~\ref{subsec:loss_functions}.
 Here we describe the specific configurations used in training and the rationale for choosing them.

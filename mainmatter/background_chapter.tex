@@ -63,8 +63,8 @@ this thesis exploit.
 Recovering the true structure from the observed blured image requires 
 inverting the convolution: \emph{deconvolution problem}. 
 This is ill-posed: in the frequency domain, 
-$\hat{Y}(\omega) = \hat{H}(\omega)\hat{X}(\omega) + \hat{N}(\omega)$, 
-so the naive inverse $\hat{X} = \hat{Y}/\hat{H}$ amplifies noise catastrophically at 
+$\hat{Y}(\omega) = \hat{H}(\omega)\hat{X}(\omega) + \hat{N}(\omega)$,
+ the naive inverse $\hat{X} = \hat{Y}/\hat{H}$ amplifies noise catastrophically at 
 frequencies where $|\hat{H}(\omega)|$ is small whcih is near and beyond the diffraction 
 cut-off. Classical regularised methods like Wiener filtering, 
 Lucy-Richardson deconvolution stabilise the inversion but require accurate 
