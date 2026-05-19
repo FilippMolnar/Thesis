@@ -77,9 +77,16 @@
     \RequirePackage[no-math]{fontspec} % Advanced font selection
 
     %% Use Arial as the main font and Roboto Slab as title fonts
-    \setmainfont{Arial}
-    \setmathsf{Arial}
-    \setmathtt{Arial}
+    %% Falls back to Liberation Sans (metric-compatible) when Arial is not installed
+    \IfFontExistsTF{Arial}{
+        \setmainfont{Arial}
+        \setmathsf{Arial}
+        \setmathtt{Arial}
+    }{
+        \setmainfont{Liberation Sans}
+        \setmathsf{Liberation Sans}
+        \setmathtt{Liberation Sans}
+    }
 
     \newfontfamily\titlestyle{Roboto Slab Light}
     \newfontfamily\largetitlestyle{Roboto Slab Thin}

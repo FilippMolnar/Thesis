@@ -33,7 +33,7 @@
 
 
 
-\section{How good is TRNet?}
+\section{Evaluating Performance of TRNet}
 \label{sec:arch_compare}
 
 \subsection{Experimental Setup}
@@ -97,7 +97,14 @@ complementing the structural-fidelity measure provided by RSP.
 \begin{figure}[h]
   \centering
   \includegraphics[width=0.75\linewidth]{figures/decorr_algorithm.png}
-  \caption{}
+  \caption{
+  a) Cross-correlation of the image with its normalized version after applying a Fourier filter.
+  b) Cross-correlation coefficient plotted as a function of the mask radius. 
+  c) High-pass filtering applied to the input image, followed by resolution estimation. 
+  d) Plot showing all the decorrelation functions calculated for the image along with resolution estimation. The green
+line represents the decorrelation function without high-pass filtering, while the grey lines correspond to those with high-pass
+filtering. The blue crosses indicate local maxima, and the black line highlights the decorrelation function at the highest
+frequency peak. The vertical dashed line marks the cut-off frequency kc . Scale bar: 5 µm.}
   \label{fig:decorr_algorithm}
 \end{figure}
 
@@ -113,9 +120,11 @@ is not architecturally constrained to a fixed frame count.
 A model trained on 8 frames can therefore attend to longer sequences at test time without
 retraining or fine-tuning. Sequential GRU fusion does not share this capability as shown in the experiment.
 
-To verify this, we evaluate the same 8-frame pretrained 1h1d model at
-$N \in \{8, 20, 30\}$ input frames and compare against the MISRGRU foundational models
-from RESURF~\cite{resurf2024}.
+To verify this, we trained the TRNet with modifications as mentioned 
+in Section~\ref{sec:adaptation}. 
+The model was trained on 8 input frames with shallow transformer size (1 head and depth of one).
+During evaluation we compared the reconstruction accuracy of using different input frames $N \in \{8, 20, 30\}$ 
+and compare against the MISRGRU foundational models from RESURF~\cite{resurf2024}.
 Figure~\ref{fig:boxplot_rsp_model_comparison} shows RSP aggregated over all 480 test
 samples, with classical SOFI (100-frame) shown in grey as an upper reference.
 
@@ -255,7 +264,7 @@ making it the preferred configuration given its substantially lower inference la
 To assess the computational cost and speed of TRNet, experiments with increasing Transformer 
 depth and attention heads, were done.
 We benchmarked all four TR-MISR size variants and the MISRGRU baseline on an NVIDIA RTX A5000 
-(24\,GB) using PyTorch and TensorRT execution. \todo{add tesnort graph}
+(24\,GB) using PyTorch and TensorRT execution.
 Each model was evaluated at three frame counts ($N \in \{8, 20, 30\}$) where the frame size 
 was 512x512 pixels. 8 frames matches the MISRGRU baseline, 20 frames is the best performing 
 foundational model in prior work, and 30 frames tests scalability.
@@ -273,7 +282,7 @@ foundational model in prior work, and 30 frames tests scalability.
     TR-MISR 1h1d  &  \textbf{48,692} & 87.97 & 262.55 & 608.56 \\
     TR-MISR 2h2d  &  57,388 & 188.14 & 487.61 & 1200.65 \\
     TR-MISR 4h3d  &  66,084 & 209.10 & 858.60 & 3935.62 \\
-    TR-MISR 8h6d  & 145,932 & — & — & — \\
+    TR-MISR 8h6d  & 145,932 & - & - & - \\
     MISRGRU       &  95,073 & \textbf{67.64} & \textbf{170.29} & \textbf{255.92} \\
     \hline
   \end{tabular}
@@ -292,9 +301,6 @@ meaningfully beyond 1h1d, yet latency grows steeply with model size. For real-ti
 live-cell imaging at 40\,fps (25\,ms budget per frame), TR-MISR 1h1d at N=8 is the            
 only TR-MISR variant that remains feasible. All subsequent experiments therefore use          
 the 1h1d configuration.
-
-\todo{real data experiments with squirel}
-\todo{training set size ablation}
 
 \section{Modifying MISRGRU to for video SR reconstruction}
 
@@ -414,12 +420,11 @@ a single 48-channel ConvGRU, and a transposed-convolution decoder.
 \begin{figure}[h]
   \centering
   \includegraphics[width=1.0\linewidth]{figures/snr_conditions_streaming_models.png}
-  \caption{Performance of two best streaming modelsmodels
-and SOFI. Each column corresponds to a different SNR (photons/frame): 100(high-SNR) or 40 (low-SNR), and
+  \caption{Performance of two best streaming models from ablation studies~\ref{app:streaming_misrgru_ablations} and batch MISRGRU. 
+  Each column corresponds to a different SNR (photons/frame): 100(high-SNR) or 40 (low-SNR), and
 and blinking conditions (on time/ off time in ms): 10/600 (fast) or 10/2400 (slow). 
-Corresponded resolution estimations and RSP scores of
-the models for different conditions. RSP analysis is compared with reference ground-truth (GT),
- a FH: Fast high SNR, FL: Fast low SNR,
+Corresponded resolution estimations and RSP scores of the models for different conditions. 
+RSP analysis is compared with reference ground-truth (GT), a FH: Fast high SNR, FL: Fast low SNR,
 SH: Slow high SNR, SL: Slow low SNR}
   \label{fig:lln35_vs_largergrufourier}
 \end{figure}
@@ -459,6 +464,106 @@ the models seem to benefit from more training}
 % The \texttt{streaming\_fourier} model offers \emph{improving} quality as more frames accumulate, making it better suited to longer recordings or post-acquisition replay. Its slight outperformance of the batch model (Pearson +0.004) suggests that frame-by-frame Fourier supervision acts as an implicit regulariser, encouraging the hidden state to maintain high-frequency information at each step rather than deferring reconstruction quality to the end of the sequence.
 
 % Both streaming models exceed the 8-frame RESURF baseline within 10 accumulated frames, confirming that streaming deployment does not require sacrificing the reconstruction quality established by~\cite{jelle2024}.
+
+
+
+
+
+
+\section{Motion reconstruction}
+\label{sec:alignment_ablation}
+With fast (11ms inference per frame) streaming MISRGRU we decided to explore motion
+reconstruction capabilities. 
+
+To evaluate whether explicit inter-frame alignment improves the streaming GRU, we trained
+an additional variant incorporating the Deformable Phace-space Alignment module (DPA) inspired by \cite{qiao2025dpatisr} 
+and baseline fourier streaming MISRGRU.
+The exact implementation details are described in subsection~\ref{sssec:dpa}.
+Both \texttt{finetune motion} and \texttt{DPA deformable conv} were finetuned on baseline fourier
+weights~\ref{fig:largergru_vs_fourierbaseline} for 100 epochs.
+
+We evaluated the reconstruction accuracy of the streaming models under motion conditions at varying acquisition speeds.
+Figure~\ref{fig:motion_snr_02} shows the RSP metric at 0.2 px per frame speed across different imaging conditions,
+demonstrating that the streaming variants maintain strong reconstruction quality even with motion-induced temporal dynamics.
+On fast blinking and high SNR samples the model reaches almost the same value as model
+reconstructing static frames (0.8887 vs 0.905) Table~\ref{tab:motion_rsp}.
+
+
+\begin{table}[h]
+  \centering
+  \caption{Mean RSP at 0.2 imaging speed across four blinking/SNR conditions vs Static LLN35.
+           FH: Fast-High SNR, FL: Fast-Low SNR, SH: Slow-High SNR, SL: Slow-Low SNR.
+           Best value per condition is highlighted in bold.}
+  \label{tab:motion_rsp}
+  \begin{tabular}{lcccc}
+    \toprule
+    \textbf{Model} & \textbf{FH} & \textbf{FL} & \textbf{SH} & \textbf{SL} \\
+    \midrule
+    Static LLN35            & \textbf{0.9047} & \textbf{0.9106} & \textbf{0.8778} & \textbf{0.8583} \\
+    Finetune motion         & 0.8629          & 0.8345          & 0.7336          & 0.6538          \\
+    DPA deformable conv     & 0.8887          & 0.8728          & 0.8287          & 0.7484          \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+
+
+To provide visual validation of the reconstruction quality, Figure~\ref{fig:motion_visual_comparison} presents
+a direct visual comparison of the motion reconstruction output after 20 frames of motion. 
+Both finetuning the baseline streaming model and the dpa variant show fine detail in the image. The dpa model, however,
+produces slightly less blur which can be seen in the top part of the image.
+Both TR-MISR and batch MISRGRU models are essentially averaging all frames and were not 
+able to reconstruct any motion as they were trained only on static data. 
+
+\begin{figure}[htb]
+  \centering
+  \includegraphics[width=\textwidth]{figures/motion_visual_comparison_FH.png}
+  \caption{Visual comparison of finetuning streaming MISRGRU and dpa variant in motion reconstruction. 
+  The figure demonstrates the preservation of micrtotubal structures under $2 \mu m/s$ speed augmentation}
+  \label{fig:motion_visual_comparison}
+\end{figure}
+
+
+\textbf{Do models trained on moving data lose accuracy on static samples?}  
+Figure~\ref{fig:motion_snr_static} evaluates the motion-finetuned model (\texttt{finetune\_motion})
+alongside the unmodified baseline (\texttt{lln35}), the DPA variant (\texttt{dpa\_dfconv\_pw01}),
+and the batch MISRGRU reference, all tested on static data across the four imaging conditions.
+
+\begin{figure}[htb]
+  \centering
+  \includegraphics[width=\textwidth]{figures/motion_snr_static_eval.png}
+  \caption{RSP of streaming and batch MISRGRU variants under static evaluation.}
+  \label{fig:motion_snr_static}
+\end{figure}
+
+The motion-finetuned model retains competitive RSP in the Fast/High-SNR and Fast/Low-SNR conditions,
+remaining within a few percentage points of the unmodified baseline at both 20 and 100 accumulated
+frames.
+A modest degradation is visible in the Slow/High-SNR condition, and becomes more pronounced under
+Slow/Low-SNR, where the finetuned model's median RSP falls slightly below that of the unmodified
+baseline.
+This pattern is expected: slow, and low SNR acquisitions benefit most from temporal averaging,
+so a model regularised toward handling inter-frame displacement has less capacity to
+exploit the extended correlation structure present in static slow-SNR data.
+The degradation is small relative to the motion-condition gains demonstrated in
+Figure~\ref{fig:motion_snr_02}: the model recovers most of its static performance while
+substantially outperforming un-finetuned batch models under motion.
+
+\begin{figure}[htb]
+  \centering
+  \includegraphics[width=0.8\textwidth]{figures/motion_snr_02.png}
+  \caption{RSP of streaming and batch MISRGRU variants under motion conditions at 0.2 px per frame imaging speed.}
+  \label{fig:motion_snr_02}
+\end{figure}
+
+The DPA variant shows higher variance in all imaging conditions at 20 frames.
+At 100 accumulated frames the gap between all streaming variants and the batch reference narrows,
+confirming that the streaming models converge toward the same reconstruction quality given sufficient
+temporal context.
+
+Overall, the streaming models can achieve competitive reconstruction accuracy while
+maintaining the ultrafast inference times required for real-time deployment.
+
 
 \subsection{Streaming Inference Latency}
 \label{ssec:streaming_latency}
@@ -511,127 +616,3 @@ and finetuning the baseline streaming MISRGRU to reconstruct motion.
 % processing cost over all 20 outputs: the convolutional GRU processes one frame at a time
 % in a fixed-cost forward pass, spreading the total 226\,ms across 20 SR reconstructions
 % instead of accumulating 20 frames before a single decode.
-
-
-
-
-\section{Motion reconstruction}
-\label{sec:alignment_ablation}
-With fast (11ms inference per frame) streaming MISRGRU we decided to explore motion
-reconstruction capabilities. 
-
-To evaluate whether explicit inter-frame alignment improves the streaming GRU, we trained
-an additional variant incorporating the Deformable Phace-space Alignment module (DPA) inspired by \cite{qiao2025dpatisr} 
-and baseline fourier streaming MISRGRU.
-The exact implementation details are described in subsection~\ref{sssec:dpa}.
-Both \texttt{finetune motion} and \texttt{DPA deformable conv} were finetuned on baseline fourier
-weights~\ref{fig:largergru_vs_fourierbaseline} for 100 epochs.
-
-We evaluated the reconstruction accuracy of the streaming models under motion conditions at varying acquisition speeds.
-Figure~\ref{fig:motion_snr_02} shows the RSP metric at 0.2 px per frame speed across different imaging conditions,
-demonstrating that the streaming variants maintain strong reconstruction quality even with motion-induced temporal dynamics.
-On fast blinking and high SNR samples the model reaches almost the same value as model
-reconstructing static frames (0.8887 vs 0.905)~\ref{tab:motion_rsp}.
-
-
-\begin{table}[h]
-  \centering
-  \caption{Mean RSP at 0.2 imaging speed across four blinking/SNR conditions vs Static LLN35.
-           FH: Fast-High SNR, FL: Fast-Low SNR, SH: Slow-High SNR, SL: Slow-Low SNR.
-           Best value per condition is highlighted in bold.}
-  \label{tab:motion_rsp}
-  \begin{tabular}{lcccc}
-    \toprule
-    \textbf{Model} & \textbf{FH} & \textbf{FL} & \textbf{SH} & \textbf{SL} \\
-    \midrule
-    Static LLN35            & \textbf{0.9047} & \textbf{0.9106} & \textbf{0.8778} & \textbf{0.8583} \\
-    Finetune motion         & 0.8629          & 0.8345          & 0.7336          & 0.6538          \\
-    DPA deformable conv     & 0.8887          & 0.8728          & 0.8287          & 0.7484          \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-\begin{figure}[htb]
-  \centering
-  \includegraphics[width=0.8\textwidth]{figures/motion_snr_02.png}
-  \caption{RSP of streaming and batch MISRGRU variants under motion conditions at 0.2 px per frame imaging speed.}
-  \label{fig:motion_snr_02}
-\end{figure}
-
-To provide visual validation of the reconstruction quality, Figure~\ref{fig:motion_visual_comparison} presents
-a direct visual comparison of the motion reconstruction output after 20 frames of motion. 
-Both finetuning the baseline streaming model and the dpa variant show fine detail in the image. The dpa model, however,
-produces slightly less blur which can be seen in the top part of the image.
-Both TR-MISR and batch MISRGRU models are essentially averaging all frames and were not 
-able to reconstruct any motion as they were trained only on static data. 
-
-\begin{figure}[htb]
-  \centering
-  \includegraphics[width=\textwidth]{figures/motion_visual_comparison_FH.png}
-  \caption{Visual comparison of finetuning streaming MISRGRU and dpa variant in motion reconstruction. 
-  The figure demonstrates the preservation of micrtotubal structures under $2 \mu m/s$ speed augmentation}
-  \label{fig:motion_visual_comparison}
-\end{figure}
-
-
-\textbf{Do models trained on moving data lose accuracy on static samples?}  
-Figure~\ref{fig:motion_snr_static} evaluates the motion-finetuned model (\texttt{finetune\_motion})
-alongside the unmodified baseline (\texttt{lln35}), the DPA variant (\texttt{dpa\_dfconv\_pw01}),
-and the batch MISRGRU reference, all tested on static data across the four imaging conditions.
-
-\begin{figure}[htb]
-  \centering
-  \includegraphics[width=\textwidth]{figures/motion_snr_static_eval.png}
-  \caption{RSP of streaming and batch MISRGRU variants under static evaluation.}
-  \label{fig:motion_snr_static}
-\end{figure}
-
-The motion-finetuned model retains competitive RSP in the Fast/High-SNR and Fast/Low-SNR conditions,
-remaining within a few percentage points of the unmodified baseline at both 20 and 100 accumulated
-frames.
-A modest degradation is visible in the Slow/High-SNR condition, and becomes more pronounced under
-Slow/Low-SNR, where the finetuned model's median RSP falls slightly below that of the unmodified
-baseline.
-This pattern is expected: slow, and low SNR acquisitions benefit most from temporal averaging,
-so a model regularised toward handling inter-frame displacement has less capacity to
-exploit the extended correlation structure present in static slow-SNR data.
-The degradation is small relative to the motion-condition gains demonstrated in
-Figure~\ref{fig:motion_snr_02}: the model recovers most of its static performance while
-substantially outperforming un-finetuned batch models under motion.
-
-The DPA variant shows higher variance in all imaging conditions at 20 frames.
-At 100 accumulated frames the gap between all streaming variants and the batch reference narrows,
-confirming that the streaming models converge toward the same reconstruction quality given sufficient
-temporal context.
-
-Overall, the streaming models can achieve competitive reconstruction accuracy while
-maintaining the ultrafast inference times required for real-time deployment.
-
-
-
-\paragraph{Real-time deployment feasibility.}
-Live-cell fluorescence microscopy typically acquires at 40\,fps (25\,ms budget per frame).
-A streaming model must return one SR output within this budget to avoid back-pressure on
-the acquisition pipeline.
-All three streaming models satisfy this constraint:
-
-\begin{itemize}
-  \item \textbf{Streaming MISRGRU} (11.32\,ms) leaves 54\% of the 25\,ms budget unused,
-        providing headroom for data transfer, post-processing, or display.
-  \item \textbf{Streaming Larger GRU} (12.02\,ms) achieves similar throughput with a
-        38\% larger model, confirming that the extra capacity buys marginal reconstruction
-        quality without compromising real-time operation.
-  \item \textbf{Streaming MISRGRU DPA} (17.46\,ms) includes the deformable alignment
-        module (Section~\ref{sec:alignment_ablation}), which adds approximately 6\,ms
-        of overhead. The model still meets the 40\,fps budget, but its quality advantage
-        over the base model was shown to be negligible (Section~\ref{sec:alignment_ablation}),
-        making the extra cost unjustified.
-\end{itemize}
-
-Compared to the original SOFI pipeline, which requires on the order of hundreds of frames
-and several seconds of off-line processing, the streaming deployment at 11--17\,ms per SR
-output represents an acceleration of well over two orders of magnitude, consistent with the
-400-fold latency reduction reported for the foundational batch model by~\cite{resurf2024}.
-Crucially, the streaming model achieves this at \emph{every frame} rather than at the end
-of a fixed acquisition window, enabling truly continuous super-resolution output
-synchronised with the microscope acquisition clock.

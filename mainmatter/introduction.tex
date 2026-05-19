@@ -54,12 +54,13 @@
 % Among these, SOFI is uniquely grounded in statistical theory: it reconstructs SR images by exploiting the temporal and spatial correlations of fluorophore blinking through cross-cumulant analysis. Resolution improvement arises from the statistical independence of different fluorophores~\cite{sofi2009}. Because noise is temporally uncorrelated, SOFI can operate under low SNR conditions, making it particularly well-suited for live-cell imaging. For n-th order SOFI, an n-fold improvement in spatial resolution is achieved. Despite these advantages, SOFI still requires hundreds of frames per reconstruction, which limits its ability to capture fast cellular dynamics and renders real-time imaging impractical. Without real-time capability, researchers cannot make immediate decisions during live experiments, reducing the practical utility of the technique.                                
 % Deep learning offers a promising path to reduce the number of frames required for SR reconstruction while preserving resolution gains. Recent work by Komen~\cite{jelle2024} introduced a deep learning model that accelerates second-order SOFI by reconstructing a 2× SR image from as few as 20 frames. Their model encodes input frames into feature maps, fuses them with a recurrent Gated Recurrent Unit (GRU) structure to capture blinking correlations across time, and upsamples the result into a second-order SR image. Trained on synthetic data the approach demonstrated that spatiotemporal deep learning models can approximate SOFI-quality reconstructions at a fraction of the acquisition cost.
         
-\todo[inline]{mention streaming architecture}
 % In this thesis, we investigate whether the recurrent fusion module can be replaced by a more expressive attention-based mechanism. Specifically, we adapt TR-MISR~\cite{TR-MISR-original}, a Transformer-based Multi-Image Super-Resolution framework originally developed for satellite imagery and ranked first on the PROBA-V benchmark, to the SOFI acceleration task. Rather than fusing frames sequentially through a GRU, TR-MISR employs a multi-head self-attention. Transformer with learnable class tokens to aggregate spatial features across all input frames simultaneously.                                                                                                                    
-\todo[inline]{references}
-\todo[inline]{mention streaming architecture}
-\todo[inline]{results}
 
 
 \section{Outline}
-In the next chapters, the concepts such as fluorescent microscopy and deep learning are presented in chapter \ref{ch:background}. Chapter \ref{ch:method} presents our proposed architecture and how we augmented the datasets for moving structures followed by chapter \ref{ch:results}. Lastly, the main outcomes are provided in chapter \ref{ch:results}.
+In the next chapters, the concepts such as fluorescent microscopy and 
+how deep learning is utilized to tackle the challenges in this field are 
+presented in chapter \ref{ch:background}.
+Chapter \ref{ch:method} follows the background and elaborates more on our contributions.
+How we augmented the datasets for moving structures are described in chapter \ref{ch:datasets}.
+Lastly, the main outcomes are provided in chapter \ref{ch:results}.

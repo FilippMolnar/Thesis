@@ -287,18 +287,14 @@ Training on sequences of length 50 frames with standard backpropagation through 
 To solve this we \emph{truncated BPTT} (TBPTT). The sequence is split into chunks of 
 length \texttt{chunk\_size}, and the hidden state is detached from the computational graph at each 
 chunk boundary. Only gradients within a chunk are backpropagated. 
-Moreover this helps the model to stabilize 
+Moreover this helps the model to stabilize, train faster for more epochs and trains model to learn from 
+warm state when hidden state is detached wich resembles real world scenario during long inferences.
 
 A second key hyperparameter is \texttt{loss\_last\_n}: supervision is applied only on the 
 \emph{last} $n$ frames of each chunk, allowing the GRU to accumulate meaningful context for 
 several steps before being penalised. Supervising every frame from the first step (as in the 
 \texttt{loss\_all\_frames} variant) causes the model to optimise for single-frame output 
 quality, which prevents the GRU from learning to defer quality improvements to later frames.
-
-The sensitivity of training to these hyperparameters is severe: chunk sizes of 10 frames
-(\texttt{T10}) produced a near-zero Pearson correlation of $\sim$0.002, indicating complete
-convergence failure (Section~\ref{sec:streaming}). A minimum chunk size of 25 frames is
-required for stable training.
 
 
 \subsubsection{Deformable Phase-space Alignment modification(DPA)}
@@ -378,97 +374,67 @@ prevents the model from degrading on non-moving data.
 
 
 
-\section{Loss Functions}
-\label{sec:loss}
-\todo{check this}
 
-The mathematical definitions of the loss functions are given in Section~\ref{subsec:loss_functions}.
-Here we describe the specific configurations used in training and the rationale for choosing them.
 
-We train all models with three loss variants:
-\begin{itemize}
-  \item \textbf{Fourier}: frequency-domain loss $\mathcal{L}_{\mathcal{F}}$ only, penalising errors
-        in both the amplitude and phase of the 2D DFT (Eq.~\eqref{eq:fourier_loss}).
-  \item \textbf{L1+Fourier}: the equal-weight combination 
-        $\mathcal{L} = \mathcal{L}_{L1} + \mathcal{L}_{\mathcal{F}}$
-        (Eq.~\eqref{eq:composite_loss} with $\lambda_1 = \lambda_2 = 1$).
-\end{itemize}
+% \section{Training Procedure}
+% \label{sec:training}
 
-The motivation for including a Fourier-domain term is grounded in SOFI physics.
-Second-order SOFI recovers spatial frequencies up to $2f_c$ — above the diffraction-limited
-cut-off $f_c$ of the raw widefield image.
-An $\ell_1$ loss in the spatial domain is dominated by the dense dark background
-(which contributes the most pixels), leaving the gradient signal from the super-resolved
-high-frequency band relatively weak.
-The Fourier loss weights every frequency component equally, directly penalising errors at
-the high-frequency band that SOFI is designed to reveal.
-This provides a principled reason why the Fourier loss consistently outperforms the spatial
-$\ell_1$ baseline on this task, as reported in~\cite{resurf2024, jelle2024}.
-Ablation results for all three configurations are given in Appendix~\ref{app:trnet_modifications}.
+% \todo{todo}
 
-For the streaming MISRGRU, the same L1+Fourier loss is applied per-frame to each streaming
-output $\hat{\mathbf{Y}}_t$, summed over the \texttt{loss\_last\_n} supervision frames at the
-end of each TBPTT chunk (Section~\ref{sec:streaming_arch}).
+% \paragraph{Optimiser.}
+% All models are trained with Adam~\cite{kingma2014adam} ($\beta_1 = 0.9$, $\beta_2 = 0.999$).
+% Two separate learning-rate groups are used: the encoder and decoder share a rate of
+% $\eta_\text{coder} = 10^{-3}$, while the Transformer fusion module uses a lower rate of
+% $\eta_\text{transformer} = 5 \times 10^{-4}$ to avoid over-updating the attention weights
+% early in training.
+% For the streaming MISRGRU, a single rate of $\eta = 3*10^{-4}$ is used throughout.
 
-\section{Training Procedure}
-\label{sec:training}
+% \paragraph{Learning rate schedule.}
+% We use cosine annealing with warm restarts: the learning rate is decayed from its
+% initial value to zero following a cosine curve over the full training run, then reset
+% and decayed again.
+% This was found to produce more stable convergence than ReduceLROnPlateau on the plateau
+% of the validation loss curve.
 
-\paragraph{Optimiser.}
-All models are trained with Adam~\cite{kingma2014adam} ($\beta_1 = 0.9$, $\beta_2 = 0.999$).
-Two separate learning-rate groups are used: the encoder and decoder share a rate of
-$\eta_\text{coder} = 10^{-3}$, while the Transformer fusion module uses a lower rate of
-$\eta_\text{transformer} = 5 \times 10^{-4}$ to avoid over-updating the attention weights
-early in training.
-For the streaming MISRGRU, a single rate of $\eta = 10^{-4}$ is used throughout;
-higher rates ($10^{-3}$, $3 \times 10^{-4}$) cause gradient instability during
-truncated backpropagation and lead to training collapse.
+% \paragraph{Batch size and gradient accumulation.}
+% Each mini-batch contains 4 samples; gradients are accumulated over 4 steps before each
+% optimiser update, giving an effective batch size of 16.
+% Gradient accumulation is used to accommodate GPU memory constraints when training on
+% 64$\times$64 LR patches with 8 frames per sample.
 
-\paragraph{Learning rate schedule.}
-We use cosine annealing with warm restarts: the learning rate is decayed from its
-initial value to zero following a cosine curve over the full training run, then reset
-and decayed again.
-This was found to produce more stable convergence than ReduceLROnPlateau on the plateau
-of the validation loss curve.
+% \paragraph{Training duration.}
+% Models are trained for up to 200 epochs.
+% For the streaming MISRGRU, training sequences are split into chunks of 16 frames
+% (\texttt{chunk\_size}) with gradients detached at chunk boundaries (TBPTT).
+% Only the last 20 frames of each chunk contribute to the loss (\texttt{loss\_last\_n}),
+% giving the GRU time to accumulate context before supervision is applied.
 
-\paragraph{Batch size and gradient accumulation.}
-Each mini-batch contains 4 samples; gradients are accumulated over 4 steps before each
-optimiser update, giving an effective batch size of 16.
-Gradient accumulation is used to accommodate GPU memory constraints when training on
-64$\times$64 LR patches with 8 frames per sample.
+% \paragraph{Data split.}
+% Training uses up to 4000 simulated samples from the synthetic dataset described in
+% Chapter~\ref{ch:datasets}.
+% A 90/10 random split assigns samples to training and validation sets; the test set is
+% held out entirely and evaluated only after all hyperparameter choices are finalised.
 
-\paragraph{Training duration.}
-Models are trained for up to 200 epochs.
-For the streaming MISRGRU, training sequences are split into chunks of 16 frames
-(\texttt{chunk\_size}) with gradients detached at chunk boundaries (TBPTT).
-Only the last 20 frames of each chunk contribute to the loss (\texttt{loss\_last\_n}),
-giving the GRU time to accumulate context before supervision is applied.
+% \paragraph{Hardware.}
+% TRNet experiments were run on a single NVIDIA RTX A5000 (24\,GB).
+% Streaming MISRGRU experiments were run on DelftBlue HPC cluster nodes equipped with
+% NVIDIA A100 GPUs (40\,GB), using Apptainer containers for reproducibility.
 
-\paragraph{Data split.}
-Training uses up to 4000 simulated samples from the synthetic dataset described in
-Chapter~\ref{ch:datasets}.
-A 90/10 random split assigns samples to training and validation sets; the test set is
-held out entirely and evaluated only after all hyperparameter choices are finalised.
+% \section{Inference Optimisation}
+% \label{sec:inference}
 
-\paragraph{Hardware.}
-TRNet experiments were run on a single NVIDIA RTX A5000 (24\,GB).
-Streaming MISRGRU experiments were run on DelftBlue HPC cluster nodes equipped with
-NVIDIA A100 GPUs (40\,GB), using Apptainer containers for reproducibility.
+% Achieving real-time super-resolution requires that model inference completes within the
+% camera acquisition interval.
+% At a typical TIRF acquisition rate of $r = 40$\,fps, the budget per frame is 25\,ms.
+% For MISR models that require $N$ frames before producing an output, the effective output
+% rate is $R = r / N$ frames per second, and the latency budget per output image is $N/r$\,s.
+% For $N = 8$ frames this gives 200\,ms; for $N = 20$ frames, 500\,ms.
 
-\section{Inference Optimisation}
-\label{sec:inference}
-
-Achieving real-time super-resolution requires that model inference completes within the
-camera acquisition interval.
-At a typical TIRF acquisition rate of $r = 40$\,fps, the budget per frame is 25\,ms.
-For MISR models that require $N$ frames before producing an output, the effective output
-rate is $R = r / N$ frames per second, and the latency budget per output image is $N/r$\,s.
-For $N = 8$ frames this gives 200\,ms; for $N = 20$ frames, 500\,ms.
-
-\paragraph{PyTorch baseline.}
-All models are first benchmarked in standard PyTorch with \texttt{torch.no\_grad()} and
-CUDA streams to eliminate Python overhead.
-Latency is measured as the mean over 100 forward passes on 512$\times$512 pixel inputs
-with batch size 1, which matches single-sample deployment conditions.
+% \paragraph{PyTorch baseline.}
+% All models are first benchmarked in standard PyTorch with \texttt{torch.no\_grad()} and
+% CUDA streams to eliminate Python overhead.
+% Latency is measured as the mean over 100 forward passes on 512$\times$512 pixel inputs
+% with batch size 1, which matches single-sample deployment conditions.
 
 % \paragraph{TensorRT acceleration.}
 % To push inference closer to the real-time budget, the TRNet encoder and decoder are
