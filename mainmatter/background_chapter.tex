@@ -53,7 +53,7 @@ The observed image is a superposition of shifted, scaled PSFs from every emitter
 where emitter $k$ is at position $r_k$ with brightness $\epsilon_k$ and time-varying on/off state
 $s_k(t)$, and $n(r,t)$ is detector noise.
 Because $v(r)$ is \emph{the same at every time step}, the temporal variation in $y(r,t)$ comes
-entirely from the blinking terms $s_k(t)$, on which both SOFI and the deep-learning models rely.
+entirely from the blinking terms $s_k(t)$, on which both various super-resoluton techniques rely.
 \subsection{The Deconvolution Problem}
 \label{subsec:deconv}
 
@@ -77,12 +77,11 @@ temporal information.
 %  This is the central insight behind SOFI (§\ref{sec:sofi_bg}) and the deep-learning 
 %  models discussed in §\ref{sec:dl_bg}.
 
-\subsection{Super-Resolution Techniques}
+\subsection{Classical Super-Resolution Microscpy Techniques}
 \label{subsec:sr_techniques}
-
 Super-resolution (SR) microscopy techniques overcome the diffraction limit by different physical 
 principles. 
-Structured Illumination Microscopy (SIM) illuminates
+  \paragraph{Structured Illumination Microscopy (SIM)} illuminates
 the sample with a known striped light pattern. The interaction between this pattern and the sample
 creates an interference pattern (called a moiré fringe) detectable by microscope. Since the illumination
 pattern is known, the sample structure can be computationally recovered from a series of differently
@@ -92,7 +91,7 @@ However, SIM requires specialised and expensive hardware, and slow acquisition o
 per reconstruction makes it poorly suited for fast live-cell imaging. High illumination intensity
 also increases phototoxicity, limiting its use with sensitive biological samples.
 
-In contrast to SIM, Stimulated Emission Depletion (STED) microscopy
+\paragraph{Stimulated Emission Depletion (STED)} microscopy
 \cite{sted1994} and Single-Molecule Localization Microscopy (SMLM) can
   push resolution down to ~20 nm. STED narrows the effective PSF by
 overlaying a doughnut-shaped depletion laser on the excitation spot,
@@ -103,7 +102,7 @@ the diffraction limit. Scanning both beams across the sample yields a
 super-resolved image \cite{huang_2009_super}. Though the STED comes with a cost of
 long acquisition times, need for specialised fluorophores, and expensive equipment. 
 
-Single-Molecule Localization Microscopy (SMLM) techniques such as 
+\paragraph{Single-Molecule Localization Microscopy (SMLM)} techniques such as 
 Photo-Activated Localization Microscopy (PALM) \cite{betzig_2006_imaging} and Stochastic Optical 
 Reconstruction Microscopy (STORM) \cite{rust_2006_subdiffractionlimit}
 achieves nanometric spatial resolution down to ~10 nm using a widefield microscope. Rather
@@ -114,6 +113,7 @@ enable highly accurate molecule detection, SMLM requires: specialized photoswitc
 high laser intensities, and the acquisition of an extremely large frame stack over milion images. The resulting long
 acquisition times fundamentally limit temporal resolution and raise the risk of phototoxicity and photobleaching \cite{smlm2018}.
 
+\paragraph{Limitations}
 Despite their resolution gains, SIM, STED, and SMLM all introduce significant practical 
 complexity compared with conventional widefield microscopy. 
 Each requires specialised hardware beyond a standard widefield setup: 
@@ -130,7 +130,7 @@ In contrast, widefield microscopy is comparatively simple and accessible,
 typically requiring only standard illumination, an objective lens, and a camera.
 Super-resolution Optical Fluctuation Imaging exploits exactly this setup to achieve super-resolution without any additional hardware.
 
-Super-resolution Optical Fluctuation Imaging (SOFI) uses the temporal and spatial correlations
+\paragraph{Super-resolution Optical Fluctuation Imaging (SOFI)} uses the temporal and spatial correlations
 of independent fluorophore blinking, rather than their precise localisation~\cite{sofi2009,pawlowska2022sofi}. 
 Because each emitter independently switches between bright (on) and dark (off) states,
 the fluorescence intensity at every pixel fluctuates over time.
@@ -173,15 +173,61 @@ SOFI~\cite{sofi2009}       & $\approx\!\sqrt{n}$-fold  & 100--1000        & Wide
 \end{tabular}
 \end{table}
 
+\subsection{Super-Resolution with Deep Learning}
+Deep learning approaches for image super-resolution replace explicit mathematical models 
+with learnable functions that are trained to map low-resolution frames to high-resolution target. 
+
+\subsubsection{RESURF}
+Tekpinar et al. \cite{resurf2024} proposed multi-
+image super-resolution gated recurrent unit
+(MISRGRU) architecture inspired by the method used in satellite imageing \cite{MISRGRU-original} to achieve real-time
+fluctuation-based super-resolution (RESURF).
+MISRGRU supports a variable number of input frames and achieves approximately 400-fold acceleration
+over classical SOFI~\cite{resurf2024}, 
+
+\subsubsection{TR-MISR: Multiimage Super-Resolution Based on Feature Fusion With Transformers}
+TR-MISR~\cite{TR-MISR-original} adapts the Transformer to the multi-image 
+super-resolution (MISR) problem, where low-resolution satelite images of the same scene 
+must be fused into a single high-resolution reconstruction. They report improved 
+robustness to noise which allows the model to receive more unclear input images 
+without performance degradation. ConvGRU on which RESURF is based has low antinoise ability, 
+due to the lack of attention mechanism \cite{TR-MISR-original}. 
+In this thesis we adapt TR-MISR to microscopy super-resolution:
+The full architectural description and comparison with MISRGRU are given in
+Section~\ref{sssec:trmisr_bg}.
+
+
+\subsubsection{DPA-TISR: Deformable Phase-space Alignment for Time-Lapse SR}
+
+Qiao et al.~\cite{qiao2025dpatisr} proposed DPA-TISR specifically for long-term live-cell SR 
+imaging using structured illumination microscopy (SIM) data. 
+The model addresses two limitations of single-image SR (SISR) when applied to time-lapse sequences: 
+SISR ignores temporal dependencies between frames, yielding temporally inconsistent reconstructions. 
+SISR provides no calibrated confidence estimate. DPA-TISR combines recurrent propagation with a novel 
+\emph{deformable phase-space alignment} (DPA) module that operates in the Fourier domain: 
+the frequency-domain phase of neighbouring feature maps is aligned before spatial fusion, 
+enabling the model to correct sub-pixel inter-frame motions that optical-flow-based alignment 
+approaches miss. A Bayesian extension (Bayesian DPA-TISR) further produces per-pixel confidence 
+maps, allowing users to identify regions where the SR reconstruction is unreliable. 
+Evaluated on the BioTISR dataset across five biological structures 
+(microtubules, lysosomes, F-actin, mitochondria, clathrin-coated pits), DPA-TISR outperforms both 
+sliding-window and recurrent SISR baselines in PSNR, SSIM, and temporal consistency.
+
+DPA-TISR address related but distinct problem. 
+DPA-TISR targets conventional time-lapse SIM data: the input frames are exploited for their 
+\emph{temporal continuity} (smooth motion between frames), and the model's alignment module is 
+explicitly designed to compensate for that motion. 
+Our work targets the \emph{fluctuation-based} SOFI reconstruction task, where temporal structure 
+is statistically stationary blinking rather than continuous motion, and the goal is to approximate 
+the SOFI cumulant from far fewer frames than the classical algorithm requires. 
+The two settings therefore call for different inductive biases in the temporal fusion module, 
+and results from DPA-TISR do not transfer directly to the SOFI domain.
 
 %% ============================================================
 \section{Deep Learning for Image Super-Resolution}
 \label{sec:dl_bg}
-
-Deep learning approaches for image super-resolution replace explicit mathematical models 
-with learnable functions that are trained to map low-resolution frames to high-resolution target. 
 The following subsections focus on the architectural building blocks most directly relevant to 
-multi-frame SOFI SR.
+multi-frame SOFI super-resolution.
 
 \subsection{Convolutional Neural Networks}
 \label{subsec:cnn} 
@@ -322,7 +368,8 @@ so the $N$ frames can be encoded in parallel.
 The encoded features are processed sequentially through a ConvGRU
 (Section~\ref{subsec:rnn}), accumulating information across frames into a hidden state
 $\mathbf{h}_t$.
-After all $N$ frames are processed, the final hidden state $\mathbf{h}_N$ is passed to the decoder.
+After all $N$ frames are processed, the GAP layer summates all hidden states $\mathbf{h}_1 \dots \mathbf{h}_N$ and that
+is passed to the decoder.
 The overall architecture is illustrated in Figure~\ref{fig:resurf_architecture}.
 
 \begin{figure}[htbp]
@@ -339,18 +386,18 @@ A transposed convolution upsamples $\mathbf{h}_N$ to the target size $(2H-7)\tim
 without any post-hoc crop.
 
 \paragraph{Limitations for SOFI.}
-MISRGRU supports a variable number of input frames and achieves approximately 400-fold acceleration
-over classical SOFI~\cite{resurf2024,komen2024}, but two structural properties are worth noting in
-the context of this thesis.
+We identified the following few limitations that we tackle in this thesis:
 First, \emph{sequential fusion}: while the encoder runs in parallel across frames, the ConvGRU
 processes one frame at a time each step depends on the previous hidden state, so the fusion stage
-cannot be parallelised. Inference time in the ConvGRU therefore scales $O(N)$ with the number of
+cannot be parallelised. Inference time in the ConvGRU therefore scales linearly with the number of
 input frames, even when all frames are available simultaneously.
 Second, \emph{asymmetric frame weighting}: by the time the GRU reaches frame $N$, the update gate
 may have substantially overwritten contributions from early frames. For SOFI, blinking events in
 frame 1 carry the same statistical weight as those in frame $N$; the recurrent bias may
 systematically underweight early-frame information.
-These two properties motivate exploring a parallel, attention-based fusion module that treats all
+Third, \emph{n-frame training limitation}: the model trained on $N$ frames performs best when $N$
+frames are used in inference, despite providing more frames in inference time.
+These limitations motivate exploring a parallel, attention-based fusion module that treats all
 $N$ frames symmetrically as described in Section~\ref{sssec:trmisr_bg}.
 
 % \subsubsection{VRT: Video Restoration Transformer}
@@ -360,15 +407,12 @@ $N$ frames symmetrically as described in Section~\ref{sssec:trmisr_bg}.
 
 \subsubsection{TR-MISR}
 \label{sssec:trmisr_bg}
-TR-MISR~\cite{TR-MISR-original} adapts the Transformer to the multi-image 
-super-resolution (MISR) problem, where $N$ low-resolution images of the same scene 
-must be fused into a single high-resolution reconstruction. 
 Rather than treating 2D spatial patches as tokens, 
 TR-MISR encodes each of the $N$ input frames into a feature map and then applies 
 the Transformer per spatial position: 
 the $N$ feature vectors at each pixel location form a length-$N$ sequence, 
 and a learnable embedding token is prepended to aggregate cross-frame information 
-at that location.
+at that location \cite{TR-MISR-original}.
 
 \paragraph{Encoder.}
 To help the network align frames implicitly, a reference image is first computed as the
@@ -432,31 +476,7 @@ modification for SOFI where temporal blinking order does carry information (see 
 
 % For the purposes of this thesis we briefly note two further architectural families; full descriptions are given in~\cite{jelle2024} §2.2.4--2.2.5. \emph{Autoencoders} learn a compressed latent representation by training an encoder-decoder pair to reconstruct the input; denoising autoencoders extend this to noise-corrupted inputs, making them relevant for low-SNR fluorescence restoration. \emph{U-Net} augments the encoder-decoder structure with \emph{skip connections} that concatenate feature maps from the encoding path directly into the decoding path at matching spatial scales, preserving spatial detail that would otherwise be lost to pooling operations. U-Net and its variants are widely applied to biomedical image restoration (e.g., CARE~\cite{jelle2024}). However, both architectures process \emph{single frames} and cannot exploit the temporal correlation of blinking fluctuations — a fundamental limitation for the SOFI acceleration task, which requires fusing information across $N$ frames.
 
-\subsubsection{DPA-TISR: Deformable Phase-space Alignment for Time-Lapse SR}
 
-Qiao et al.~\cite{qiao2025dpatisr} proposed DPA-TISR specifically for long-term live-cell SR 
-imaging using structured illumination microscopy (SIM) data. 
-The model addresses two limitations of single-image SR (SISR) when applied to time-lapse sequences: 
-SISR ignores temporal dependencies between frames, yielding temporally inconsistent reconstructions. 
-SISR provides no calibrated confidence estimate. DPA-TISR combines recurrent propagation with a novel 
-\emph{deformable phase-space alignment} (DPA) module that operates in the Fourier domain: 
-the frequency-domain phase of neighbouring feature maps is aligned before spatial fusion, 
-enabling the model to correct sub-pixel inter-frame motions that optical-flow-based alignment 
-approaches miss. A Bayesian extension (Bayesian DPA-TISR) further produces per-pixel confidence 
-maps, allowing users to identify regions where the SR reconstruction is unreliable. 
-Evaluated on the BioTISR dataset across five biological structures 
-(microtubules, lysosomes, F-actin, mitochondria, clathrin-coated pits), DPA-TISR outperforms both 
-sliding-window and recurrent SISR baselines in PSNR, SSIM, and temporal consistency.
-
-DPA-TISR and the present work address related but distinct problems. 
-DPA-TISR targets conventional time-lapse SIM data: the input frames are exploited for their 
-\emph{temporal continuity} (smooth motion between frames), and the model's alignment module is 
-explicitly designed to compensate for that motion. 
-Our work targets the \emph{fluctuation-based} SOFI reconstruction task, where temporal structure 
-is statistically stationary blinking rather than continuous motion, and the goal is to approximate 
-the SOFI cumulant from far fewer frames than the classical algorithm requires. 
-The two settings therefore call for different inductive biases in the temporal fusion module, 
-and results from DPA-TISR do not transfer directly to the SOFI domain.
 
 \subsection{Loss Functions for Super-Resolution}
 \label{subsec:loss_functions}

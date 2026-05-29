@@ -83,6 +83,53 @@ combination of three blinking-speed regimes and four photon-level fractions \cit
 \end{itemize}
 
 
+\subsection{Patch Sizes and SOFI Output Geometry}
+\label{sec:patch_sizes}
+
+Training patches are extracted as $64\times64$ LR pixels, with the corresponding HR
+SOFI target covering $121\times121$ pixels.
+The ratio $121/64 \approx 1.89$ is not an integer, which rules out standard integer-factor
+upsampling operations such as PixelShuffle and motivates the ConvTranspose2d decoder
+described in Section~\ref{sec:decoder}.
+The exact output size follows the formula:
+
+\begin{equation}
+  H_\text{out} = 2N - 7,
+  \label{eq:2n7}
+\end{equation}
+
+where $N$ is the LR patch width in pixels.
+For $N = 64$: $2 \times 64 - 7 = 121$ \checkmark.
+
+The formula arises directly from how the SOFI cross-cumulant is computed~\cite{sofi2009,geissbuehler_2012_mapping}.
+Second-order cross-cumulants are evaluated by pairing pixels within a
+\emph{fixed 4-pixel neighbourhood} that spans offsets $\{-1,0,1,2\}$ along each axis
+(as defined in the reference SOFI implementation).
+Each pixel pair at positions $r_1$ and $r_2$ contributes a virtual pixel at their
+centroid $(r_1+r_2)/2$, creating a grid twice as dense as the detector array.
+However, the maximum inter-pixel distance of 3 pixels means the 3 outermost pixels
+on each side of the image cannot form valid cross-cumulant pairs; this restricts the valid
+interior to $s = N - 3$ pixels per dimension.%
+\footnote{Traced to \texttt{sofiCumulants.m} in the reference SOFI MATLAB toolbox:
+  \url{https://github.com/GrussmayerLab/sofipackage}.}
+
+Building the full interlaced virtual grid for 2nd-order SOFI yields a $2s \times 2s$
+array:
+\begin{equation}
+  2s \times 2s = 2(N-3) \times 2(N-3) = (2N-6)\times(2N-6).
+\end{equation}
+A final boundary crop of one pixel per side (inherent to the 2nd-order interlacing
+geometry) removes one more pixel from each dimension, giving:
+\begin{equation}
+  (2N - 6 - 1) \times (2N - 6 - 1) = (2N-7)\times(2N-7).
+\end{equation}
+
+The $-7$ decomposes as $-2\times3 - 1$: the factor of 6 comes from the
+3-pixel boundary loss doubled by the 2× grid, and the extra $-1$ from the final
+interlacing crop.
+This non-integer upscaling ratio is an inherent consequence of the SOFI
+cross-cumulant geometry and cannot be avoided by changing the network design.
+
 \section{Motion Augmentation}
 \label{sec:motion_augment}
 
