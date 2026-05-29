@@ -34,10 +34,9 @@ numerical aperture of the objective, determined by the refractive index $n$ of t
 immersion medium and the half-angle $\theta$ of the light cone collected by the lens. 
 For typical visible-light fluorescence ($\lambda \approx 500$--$700\,\mathrm{nm}$, $\mathrm{NA} \approx 1.4$), this yields $d_{xy} \approx 200$--$300\,\mathrm{nm}$.
 
-Many biologically relevant structures are far smaller than this limit. Microtubules 
-($\approx$18\,nm), and mitochondrial membranes ($\approx$10\,nm),
-~\cite{beese1987microtubule,shami_2021_threedimensional} and are entirely
-hidden within the diffraction blur, making super-resolution a prerequisite for
+Many biologically relevant structures are far smaller than this limit. Microtubules
+($\approx$18\,nm) and mitochondrial membranes ($\approx$10\,nm)~\cite{beese1987microtubule,shami_2021_threedimensional}
+are entirely hidden within the diffraction blur, making super-resolution a prerequisite for
 visualising subcellular processes.
 
 \subsection{Point Spread Function}
@@ -62,8 +61,8 @@ Recovering the true structure from the observed blured image requires
 inverting the convolution: \emph{deconvolution problem}. 
 This is ill-posed: in the frequency domain, 
 $\hat{Y}(\omega) = \hat{H}(\omega)\hat{X}(\omega) + \hat{N}(\omega)$,
- the naive inverse $\hat{X} = \hat{Y}/\hat{H}$ amplifies noise at 
-frequencies where $|\hat{H}(\omega)|$ is small whcih is near and beyond the diffraction 
+ the naive inverse $\hat{X} = \hat{Y}/\hat{H}$ amplifies noise at
+frequencies where $|\hat{H}(\omega)|$ is small, which is near and beyond the diffraction
 cut-off. Classical regularised methods like Wiener filtering, 
 Lucy-Richardson~\cite{lucy-deconvolution} deconvolution stabilise the inversion but require accurate 
 knowledge of the PSF and yield a single restored image per frame, exploiting no 
@@ -82,9 +81,80 @@ temporal information.
 \label{subsec:sr_techniques}
 
 Super-resolution (SR) microscopy techniques overcome the diffraction limit by different physical 
-principles. Table~\ref{tab:sr_techniques} summarises the main families along a dimension that is 
-novel relative to prior treatments~\cite{jelle2024}: whether the temporal structure of the 
-acquired frames is exploitable by a deep-learning model.
+principles. 
+Structured Illumination Microscopy (SIM) illuminates
+the sample with a known striped light pattern. The interaction between this pattern and the sample
+creates an interference pattern (called a moiré fringe) detectable by microscope. Since the illumination
+pattern is known, the sample structure can be computationally recovered from a series of differently
+illuminated images. SIM achieves roughly 100\,nm lateral resolution; a factor-of-two improvement
+over the diffraction limit \cite{gustafsson2000sim, galbraith_2011_superresolution_glance}.
+However, SIM requires specialised and expensive hardware, and slow acquisition of multiple patterned images
+per reconstruction makes it poorly suited for fast live-cell imaging. High illumination intensity
+also increases phototoxicity, limiting its use with sensitive biological samples.
+
+In contrast to SIM, Stimulated Emission Depletion (STED) microscopy
+\cite{sted1994} and Single-Molecule Localization Microscopy (SMLM) can
+  push resolution down to ~20 nm. STED narrows the effective PSF by
+overlaying a doughnut-shaped depletion laser on the excitation spot,
+suppressing fluorescence at the periphery via stimulated emission.
+Only fluorophores at the very centre, where depletion intensity is
+zero, remain able to emit, reducing the emitting volume well below
+the diffraction limit. Scanning both beams across the sample yields a
+super-resolved image \cite{huang_2009_super}. Though the STED comes with a cost of
+long acquisition times, need for specialised fluorophores, and expensive equipment. 
+
+Single-Molecule Localization Microscopy (SMLM) techniques such as 
+Photo-Activated Localization Microscopy (PALM) \cite{betzig_2006_imaging} and Stochastic Optical 
+Reconstruction Microscopy (STORM) \cite{rust_2006_subdiffractionlimit}
+achieves nanometric spatial resolution down to ~10 nm using a widefield microscope. Rather
+  than resolving emitters simultaneously, these techniques build a super-resolved image by
+stochastically activating sparse subsets of fluorophores across millions of frames and
+fitting each isolated emitter to a precise sub-pixel position. While these localization algorithms 
+enable highly accurate molecule detection, SMLM requires: specialized photoswitchable fluorophores, 
+high laser intensities, and the acquisition of an extremely large frame stack over milion images. The resulting long
+acquisition times fundamentally limit temporal resolution and raise the risk of phototoxicity and photobleaching \cite{smlm2018}.
+
+Despite their resolution gains, SIM, STED, and SMLM all introduce significant practical 
+complexity compared with conventional widefield microscopy. 
+Each requires specialised hardware beyond a standard widefield setup: 
+structured illumination optics for SIM, 
+a precisely aligned doughnut-shaped depletion beam for STED, 
+and high-power excitation lasers together with photoswitchable fluorophores for SMLM. 
+Computational demands are also substantial. 
+SIM requires multi-image reconstruction for each frame, 
+STED often trades imaging speed for resolution because of point-scanning acquisition, 
+and SMLM must localise large numbers of emitters across thousands to millions of frames. 
+While SIM and some STED implementations can support live-cell imaging, 
+real-time super-resolution remains challenging, particularly for SMLM. 
+In contrast, widefield microscopy is comparatively simple and accessible, 
+typically requiring only standard illumination, an objective lens, and a camera.
+Super-resolution Optical Fluctuation Imaging exploits exactly this setup to achieve super-resolution without any additional hardware.
+
+Super-resolution Optical Fluctuation Imaging (SOFI) uses the temporal and spatial correlations
+of independent fluorophore blinking, rather than their precise localisation~\cite{sofi2009,pawlowska2022sofi}. 
+Because each emitter independently switches between bright (on) and dark (off) states,
+the fluorescence intensity at every pixel fluctuates over time.
+These fluctuations are spatially correlated only for photons from the same emitter:
+signals from different emitters are statistically independent and their cross-correlation
+averages to zero.
+SOFI extracts this structure using higher-order cumulants of the pixel intensity time-traces,
+which narrows the effective PSF and enhances spatial resolution without requiring individual
+molecule localisation, offering $\sqrt{n}$-fold resolution imrpovement with $n^{th}$ 
+order cummulants of a diffraction limited stack of images \cite{resurf2024}. This enhancement can be further improved 
+to n-fold by applying linearization and deconvolution or Fourier reweighting after the 
+cumulant calculation \cite{geissbuehler_2012_mapping}. Longer acquisition times and more images \
+taken are required when calculating higher-order SOFI. 
+This is challenging in practice when sample being exposed to laser for longer is bleached and 
+resulting  image has low signal-to-noise ratio. 
+
+Even SOFI that can typically achieve temporal resolution on the order of seconds to minutes, 
+since low laser power is needed to avoid photobleaching during prolonged imaging. 
+Reconstruction is generally performed offline after acquisition, 
+and even with GPU acceleration the computational latency remains on the
+order of seconds per frame. This makes none of these methods suitable for real-time,
+long-duration live-cell imaging. \cite{resurf2024}
+
+Table~\ref{tab:sr_techniques} summarises the main families of non deep learning super resolution techniques.
 
 \begin{table}[htbp]
 \centering
@@ -97,93 +167,12 @@ acquired frames is exploitable by a deep-learning model.
 \hline
 STED~\cite{sted1994}       & $<\!50\,\mathrm{nm}$      & Single          & Depletion laser   \\[2pt]
 SIM~\cite{sim2000}         & $\approx120\,\mathrm{nm}$ & 9--15           & Patterned illum.  \\[2pt]
-PALM/STORM~\cite{palm2006,storm2006} & 10--20\,nm   & $10^5$--$10^6$  & Widefield         \\[2pt]
-SOFI~\cite{sofi2009}       & $\approx\!\sqrt{n}$-fold  & 100--500        & Widefield         \\[2pt]
-SRRF~\cite{srrf2016}       & $\approx\!60\,\mathrm{nm}$ & $\sim$100      & Widefield         \\
+PALM/STORM~\cite{rust_2006_subdiffractionlimit,betzig_2006_imaging} & 10--20\,nm   & $10^5$--$10^6$  & Widefield         \\[2pt]
+SOFI~\cite{sofi2009}       & $\approx\!\sqrt{n}$-fold  & 100--1000        & Widefield         \\[2pt]
 \hline
 \end{tabular}
 \end{table}
 
-\todo{TODO write about each technique}
-\todo{TODO write section about how SOFI works }
-
-% \textbf{Illumination-based methods.} STED microscopy~\cite{sted1994} uses a doughnut-shaped depletion beam to suppress emission outside the very centre of the PSF, shrinking the effective PSF to below 50\,nm. SIM~\cite{sim2000} illuminates the sample with patterned light to encode high-frequency structural information into the detectable bandwidth, doubling lateral resolution to $\approx$120\,nm. Both require specialised hardware and high illumination intensity, limiting their applicability to live, sensitive samples.
-
-% \textbf{Single-molecule localisation microscopy (SMLM).} PALM~\cite{palm2006} and STORM~\cite{storm2006} stochastically activate sparse subsets of emitters so that individual molecules can be precisely localised by fitting the PSF. Repeating this over $10^5$--$10^6$ frames and accumulating localisations yields a super-resolved map with 10--20\,nm precision. The temporal sequence here is a sparse localisation stream; deep-learning approaches have been proposed for fast localisation but the frame count remains prohibitively large for real-time live-cell imaging.
-
-% \textbf{Fluctuation-based methods.} SOFI~\cite{sofi2009} and SRRF~\cite{srrf2016} work with densely blinking fluorophores on standard widefield microscopes. Rather than localising individual molecules, they exploit the \emph{statistical correlation} of intensity fluctuations across the frame sequence. SOFI computes spatial cumulants of the blinking time-series to produce a SR image with $\sqrt{n}$-fold ($n$-th order) resolution improvement, extended to $n$-fold with deconvolution. SRRF assesses local radial symmetry at each frame to estimate emitter positions sub-pixel.
-
-
-% \subsection{Live-Cell Imaging}
-% \label{subsec:livecell}
-
-% Live-cell fluorescence imaging faces a fundamental three-way trade-off between spatial
-% resolution, temporal resolution, and sample health~\cite{jelle2024}. 
-% Higher resolution generally requires more photons taken, which increases 
-% phototoxicity and photobleaching: damaging the cell by and destroy the fluorescent 
-% label. Temporal resolution (how rapidly frames are acquired) also competes directly 
-% with frame count: acquiring 500 frames at 40\,fps takes 12.5 seconds, 
-% during which fast cellular events — vesicle trafficking ($\sim$1\,$\mu$m/s), 
-% mitochondrial fusion, or cytoskeletal remodelling — may have substantially evolved 
-% or left the field of view.
-
-% SOFI is advantaged among SR techniques in this trade-off: it operates at low 
-% illumination intensity (reducing phototoxicity) and on a standard widefield 
-% microscope (no specialised hardware). 
-% However, requiring 100--500 frames for a reliable cumulant estimate still imposes a 
-% temporal bottleneck of several seconds to minutes at typical camera frame rates. 
-% For tracking fast organelle dynamics, this is unacceptably slow. 
-% Reducing the required frame count to 8--20 while preserving SR quality is therefore 
-% the key engineering challenge — and the direct motivation for replacing the explicit 
-% cumulant computation with a learned deep-learning model~\cite{jelle2024,resurf2024}.
-
-% %% ============================================================
-% \section{Super-Resolution Optical Fluctuation Imaging (SOFI)}
-% \label{sec:sofi_bg}
-
-% SOFI exploits the fact that fluorophores blink independently: at any time $t$, emitter $k$ is either in a bright (on) or dark (off) state with statistics that are uncorrelated across different emitters. This independence means that the time-averaged cross-correlation of two distinct pixels receives contributions only from emitters visible in both pixels simultaneously — i.e., emitters close enough to the lens that their PSF footprints overlap both pixel locations. The resolution improvement arises because the effective PSF of the cross-cumulant is narrower than that of the raw image. For a full derivation of the SOFI cumulant framework, including the role of the blinking model, Fourier reweighting, and the bSOFI balanced extension, see~\cite{sofi2009,jelle2024}. Here we summarise the key results needed to understand the $2H-7$ output size and the Fourier loss justification.
-
-% \subsection{Auto-cumulant}
-% \label{subsec:autocumulant}
-
-% Let $\delta y(r,t) = y(r,t) - \langle y(r,\cdot)\rangle$ denote the intensity fluctuation at pixel $r$ and time $t$. The second-order auto-cumulant (auto-correlation at lag $\tau$) is:
-% \begin{equation}
-%     G_2(r,\tau) = \langle \delta y(r,t+\tau)\,\delta y(r,t)\rangle
-%     = \sum_k v^2(r - r_k)\,\epsilon_k^2\,w_{2,k}(\tau),
-%     \label{eq:autocumulant}
-% \end{equation}
-% where $v(\cdot)$ is the PSF, $\epsilon_k$ is the molecular brightness of emitter $k$, and $w_{2,k}(\tau) = \langle \delta s_k(t+\tau)\,\delta s_k(t)\rangle$ encodes the blinking statistics. Because the PSF appears \emph{squared} in Eq.~\eqref{eq:autocumulant}, the effective PSF has a width of $\approx 1/\sqrt{2}$ times the original, yielding a $\sqrt{2}$ improvement in lateral resolution for second-order SOFI. More generally, the $n$-th order cumulant replaces $v^2$ with $v^n$, giving a $\sqrt{n}$-fold resolution improvement~\cite{sofi2009,jelle2024}.
-
-% \subsection{Cross-cumulant and Virtual Pixels}
-% \label{subsec:crosscumulant}
-
-% The auto-cumulant evaluates the cumulant at a single pixel location. The \emph{cross-cumulant} generalises this to pairs of positions $r_1, r_2$:
-% \begin{equation}
-%     \kappa_2(r_1, r_2, \tau) = \langle \delta y(r_1, t+\tau)\,\delta y(r_2, t)\rangle
-%     = \sum_k v(r_1 - r_k)\,v(r_2 - r_k)\,w_{2,k}(\tau).
-%     \label{eq:crosscumulant}
-% \end{equation}
-% The cross-cumulant is non-zero only when emitter $k$ contributes to \emph{both} pixels $r_1$ and $r_2$ — i.e., only when their PSF footprints overlap. Evaluating $\kappa_2$ at a sub-pixel midpoint $\bar{r} = (r_1 + r_2)/2$ yields a super-resolved \emph{virtual pixel} at a position between the physical camera pixels, increasing the effective sampling density.
-
-% Computing the second-order cross-cumulant over a $3\times 3$ neighbourhood of each pixel produces a raw output of $(2H-3)\times(2W-3)$ virtual pixels from an $H\times W$ input. After discarding edge pixels where the neighbourhood is incomplete, the usable output is $(2H-7)\times(2W-7)$~\cite{jelle2024}. For our 64\,$\times$\,64 low-resolution patches, the target is therefore 121\,$\times$\,121. This non-integer upscaling factor $\gamma = 121/64 \approx 1.89$ is the key constraint that the decoder architecture must satisfy; we discuss the two decoding strategies (PixelShuffle with crop vs. ConvTranspose2d) in Chapter~\ref{ch:method}.
-
-% \subsection{Flattening and Linearisation}
-% \label{subsec:flattening}
-
-% Higher-order cumulants amplify brighter emitters non-linearly: emitter $k$ contributes with weight $\epsilon_k^n$ to the $n$-th order cumulant image. This brightness non-uniformity obscures dim emitters and makes quantitative interpretation difficult. \emph{Linearisation} (flattening) corrects for this by taking the $n$-th root:
-% \begin{equation}
-%     \bar{g}(r) = \hat{g}^{1/n}(r),
-%     \label{eq:linearisation}
-% \end{equation}
-% where $\hat{g}$ is the raw cumulant image. An alternative is \emph{Fourier reweighting} (Richardson-Lucy deconvolution in the frequency domain), which can achieve a full $n$-fold resolution improvement rather than $\sqrt{n}$. We adopt \emph{adaptive linearisation} following~\cite{jelle2024,resurf2024}, which adjusts the exponent based on the estimated on-time ratio $\rho_\mathrm{on}$ of the emitters.
-
-% \paragraph{SOFI as a temporal sequence.}
-
-% From a machine learning perspective, the $T$ frames acquired at a single pixel form a time-series $\{y(r,t)\}_{t=1}^{T}$ whose autocorrelation structure encodes the emitter blinking statistics. Crucially, the blinking process is \emph{stationary}: the autocorrelation $G_2(r,\tau)$ depends only on the lag $\tau$, not on the absolute frame index. This means the $N$ input frames are \emph{exchangeable} — permuting them does not change the statistical information they collectively carry. A model that processes all $N$ frames simultaneously without imposing a temporal order is therefore not at an information-theoretic disadvantage compared to one that processes them sequentially. This observation is central to the design choice explored in this thesis: Transformer self-attention treats the frame sequence as an unordered set, which matches the SOFI data generating process; the GRU instead imposes a sequential ordering that the data do not require.
-
-% \paragraph{Frame count vs.\ reconstruction quality.}
-
-% \cite{jelle2024,resurf2024} showed empirically that MISRGRU achieves near-SOFI-quality reconstruction with as few as 8 frames, with diminishing returns beyond 20. The trade-off arises because each additional frame provides an incrementally better estimate of the autocorrelation, but also increases acquisition time and thereby reduces temporal resolution. Whether a Transformer — which attends to all $N$ frames simultaneously and can in principle weight each frame's contribution by its local signal quality — exhibits the same saturation threshold is one of the research questions we address in Chapter~\ref{ch:results}.
 
 %% ============================================================
 \section{Deep Learning for Image Super-Resolution}
