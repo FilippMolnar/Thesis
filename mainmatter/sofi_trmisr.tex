@@ -75,14 +75,14 @@ a $2\times$ PixelShuffle followed by a centre-crop to match the target resolutio
  $(2H-7)\times(2W-7)$ output size directly.
 These are described in detail in Section~\ref{sec:decoder}.
 
-\paragraph{Positional encoding.}
-The original TR-MISR fusion is has no positional encoding on the frame
-tokens (Section~\ref{sssec:trmisr_bg}). This works well in satelite domain because the input
-images are not in sequence and the order does not matter.
+% \paragraph{Positional encoding.}
+% The original TR-MISR fusion is has no positional encoding on the frame
+% tokens (Section~\ref{sssec:trmisr_bg}). This works well in satelite domain because the input
+% images are not in sequence and the order does not matter.
 
-In fluorescent microscopy domain and SOFI specifically exploits temporal fluctuations in pixels.
-For this reason we add a learnable frame-index positional embedding to the token sequence before the
-first Transformer layer, so the model can exploit the temporal order of blinking events.
+% In fluorescent microscopy domain and SOFI specifically exploits temporal fluctuations in pixels.
+% For this reason we add a learnable frame-index positional embedding to the token sequence before the
+% first Transformer layer, so the model can exploit the temporal order of blinking events.
 
 \section{Improved Fusion}
 \label{sec:fusion}
@@ -235,7 +235,7 @@ reinitializing the hidden state performs when run longer than 20 frames.
 The results from the experiments prompted us to remove the GAP layer and force the 
 Decoder to reconstruct the SR output only from last hidden state $h_k$.
 
-\begin{figure}[h]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{figures/sliding_window_misrgru.png}
   \caption{Sliding-window MISRGRU architecture. Only highlighted parts are being 
@@ -256,7 +256,7 @@ Removing it forces both ConvGRU and Decoder to reconstruct the SR output from la
 state $h_k$ at every new frame.
 
 
-\begin{figure}[h]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{figures/streaming_misrgru_architecture.png}
   \caption{Streaming (many-to-many) MISRGRU architecture. 
@@ -376,49 +376,55 @@ prevents the model from degrading on non-moving data.
 
 
 
-% \section{Training Procedure}
-% \label{sec:training}
+\section{Training Procedure}
+\label{sec:training}
 
-% \todo{todo}
+\todo{todo}
 
-% \paragraph{Optimiser.}
-% All models are trained with Adam~\cite{kingma2014adam} ($\beta_1 = 0.9$, $\beta_2 = 0.999$).
-% Two separate learning-rate groups are used: the encoder and decoder share a rate of
-% $\eta_\text{coder} = 10^{-3}$, while the Transformer fusion module uses a lower rate of
-% $\eta_\text{transformer} = 5 \times 10^{-4}$ to avoid over-updating the attention weights
-% early in training.
-% For the streaming MISRGRU, a single rate of $\eta = 3*10^{-4}$ is used throughout.
+\paragraph{Optimiser.}
+All models are trained with Adam~\cite{kingma2014adam} ($\beta_1 = 0.9$, $\beta_2 = 0.999$).
+Two separate learning-rate groups are used: the encoder and decoder share a rate of
+$\eta_\text{coder} = 10^{-3}$, while the Transformer fusion module uses a lower rate of
+$\eta_\text{transformer} = 5 \times 10^{-4}$ to avoid over-updating the attention weights
+early in training.
+For the streaming MISRGRU, a single rate of $\eta = 3*10^{-4}$ is used throughout.
 
-% \paragraph{Learning rate schedule.}
-% We use cosine annealing with warm restarts: the learning rate is decayed from its
-% initial value to zero following a cosine curve over the full training run, then reset
-% and decayed again.
-% This was found to produce more stable convergence than ReduceLROnPlateau on the plateau
-% of the validation loss curve.
+\paragraph{Learning rate schedule.}
+Three schedules were evaluated: \texttt{ReduceLROnPlateau}, which multiplies the
+learning rate by a fixed factor whenever the training loss has not improved for a set number
+of epochs; \texttt{CosineAnnealingLR}, which decays the rate from its initial
+value to a small minimum following a cosine curve over the full training run; and a manual
+step-decay, which applies the same multiplicative factor on a fixed patience
+counter without a \texttt{torch} scheduler object.
+A comparison run at 200 epochs showed that \texttt{ReduceLROnPlateau} reached a lower final
+loss than both cosine annealing and manual decay so strategy \texttt{ReduceLROnPlateau} was adopted 
+for all subsequent experiments.
+The decay factor is set to $0.95$ and the patience to 5 epochs.
 
-% \paragraph{Batch size and gradient accumulation.}
-% Each mini-batch contains 4 samples; gradients are accumulated over 4 steps before each
-% optimiser update, giving an effective batch size of 16.
-% Gradient accumulation is used to accommodate GPU memory constraints when training on
-% 64$\times$64 LR patches with 8 frames per sample.
+\paragraph{Batch size and gradient accumulation.}
+Each mini-batch contains 4 samples; gradients are accumulated over 4 steps before each
+optimiser update, giving an effective batch size of 16.
+Gradient accumulation is used to accommodate GPU memory constraints when training on
+256$\times$256 LR patches with 8 or 20 frames per sample in .
 
-% \paragraph{Training duration.}
-% Models are trained for up to 200 epochs.
-% For the streaming MISRGRU, training sequences are split into chunks of 16 frames
-% (\texttt{chunk\_size}) with gradients detached at chunk boundaries (TBPTT).
-% Only the last 20 frames of each chunk contribute to the loss (\texttt{loss\_last\_n}),
-% giving the GRU time to accumulate context before supervision is applied.
+\paragraph{Training duration.}
+TRNet models were trained for 100 epochs.
+For the streaming MISRGRU, we trained models on DelftBlue with limit of 24 hours.
+Trainings ended approximately at 190 epochs. Training logs are shown in 
+Appendix~\ref{app:streaming_misrgru_ablations}.
 
-% \paragraph{Data split.}
-% Training uses up to 4000 simulated samples from the synthetic dataset described in
-% Chapter~\ref{ch:datasets}.
-% A 90/10 random split assigns samples to training and validation sets; the test set is
-% held out entirely and evaluated only after all hyperparameter choices are finalised.
+\paragraph{Data split.}
+Training uses up to 2000 simulated samples from the synthetic dataset described in
+Chapter~\ref{ch:datasets}.
+A 90/10 random split assigns samples to training and validation sets during training.
+Once training is completed the separate evaluation dataset of 12 different conditios of 40 images
+ is used to the test set is evaluate the performance of models.
 
-% \paragraph{Hardware.}
-% TRNet experiments were run on a single NVIDIA RTX A5000 (24\,GB).
-% Streaming MISRGRU experiments were run on DelftBlue HPC cluster nodes equipped with
-% NVIDIA A100 GPUs (40\,GB), using Apptainer containers for reproducibility.
+\paragraph{Hardware.}
+TRNet experiments were run on a single NVIDIA RTX A5000 (24\,GB). Training took approximately 4 and 9 hours
+for 8 and 20 frame models, respectively.
+Streaming MISRGRU experiments were run on DelftBlue HPC cluster nodes equipped with
+NVIDIA A100 GPUs (80\,GB), using Apptainer containers for reproducibility.
 
 % \section{Inference Optimisation}
 % \label{sec:inference}

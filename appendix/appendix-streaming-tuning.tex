@@ -33,14 +33,14 @@ the hidden-state trajectory is supervised.
 Figure~\ref{fig:lln10vslln35} compares RSP on the evaluation set $N=10$ (where gradients cover only the last 20\% of the sequence) and $N=35$
 (covering the last 70\%).
 
-\begin{figure}[h]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{figures/lln10vslln35.png}
   \caption{RSP evaluation of models when trained with $N=10$ and $N=35$.}
   \label{fig:lln10vslln35}
 \end{figure}
 
-\begin{figure}[h]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{figures/loss_streaming_lln10_baseline_lln35.png}
   \caption{Loss comparison of baseline streaming model ($N=20$) and models trained with
@@ -63,7 +63,7 @@ the pure Fourier loss $\mathcal{L}_\text{Fourier}$ and the combined
 $\mathcal{L}_\text{L1+Fourier} = \mathcal{L}_\text{L1} + \lambda\,\mathcal{L}_\text{Fourier}$.
 with $\lambda$ being 0.1.
 
-\begin{figure}[h]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{figures/streaming_l1f_vs_fourier.png}
   \caption{RSP on the test set per SNR condition for streaming MISRGRU trained with
@@ -88,7 +88,7 @@ To test whether a single wider GRU with the same total channel budget can match 
 upon this design, we trained a variant with one ConvGRU of 48 channels.
 Both models were trained with the Fourier loss and LLN20.
 
-\begin{figure}[h]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{figures/largergru_vs_fourierbaseline.png}
   \caption{RSP per SNR condition for streaming MISRGRU with two 24-channel ConvGRUs
@@ -96,7 +96,7 @@ Both models were trained with the Fourier loss and LLN20.
   \label{fig:largergru_vs_fourierbaseline}
 \end{figure}
 
-\begin{figure}[h]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{figures/loss_streaming_architecture_size.png}
   \caption{Validation loss during training of 1x48 ConvGRU vs 2x24 ConvGRUs}
@@ -128,7 +128,7 @@ the seven-pixel border, and a learned transposed convolution
 (\texttt{ConvTranspose2d}) configured to output exactly $(2H-7)\times(2W-7)$ pixels
 by adjusting stride, padding, and output-padding.
 
-\begin{figure}[h]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{figures/streaming_pixelshuffle_vs_deconv.png}
   \caption{RSP per SNR condition for streaming MISRGRU with a PixelShuffle decoder

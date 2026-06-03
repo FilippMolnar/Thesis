@@ -288,8 +288,8 @@ or faster motion.
 Motion augmentation is applied on-the-fly inside the
 \texttt{StreamingTensorDataset} data loader.
 For each training sample, a motion augmentation is applied with a probability of $p_\text{motion} = 0.7$
-This way model remembers to reconstruct static samples.
+This way model remembers to reconstruct static samples as well.
 When augmentation is applied, peak velocity is drawn uniformly from $[0.2,\,1.5]$\,LR\,px/frame,
-a trajectory is generated via Algorithm~\ref{alg:trajectory}, and the frames and
-targets are shifted via Algorithm~\ref{alg:shift} with $d_{\max} = 38$\,LR\,px.
+a trajectory is generated, and the frames and
+targets are shifted accordingly with $d_{\max} = 38$\,LR\,px.
 Otherwise the static HR image is kept across all $T$ frames.

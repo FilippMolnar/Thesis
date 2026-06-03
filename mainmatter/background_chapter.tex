@@ -178,21 +178,46 @@ Deep learning approaches for image super-resolution replace explicit mathematica
 with learnable functions that are trained to map low-resolution frames to high-resolution target. 
 
 \subsubsection{RESURF}
-Tekpinar et al. \cite{resurf2024} proposed multi-
-image super-resolution gated recurrent unit
-(MISRGRU) architecture inspired by the method used in satellite imageing \cite{MISRGRU-original} to achieve real-time
-fluctuation-based super-resolution (RESURF).
-MISRGRU supports a variable number of input frames and achieves approximately 400-fold acceleration
-over classical SOFI~\cite{resurf2024}, 
+Tekpinar et al.~\cite{resurf2024} proposed the multi-image super-resolution gated recurrent unit
+(MISRGRU) architecture, inspired by the method used in satellite imaging~\cite{MISRGRU-original},
+to achieve real-time fluctuation-based super-resolution (RESURF).
+The key insight is that the stochastic blinking statistics that SOFI exploits can be recovered
+from far fewer frames than the classical algorithm requires, provided the fusion network has
+seen enough representative blinking patterns during training.
+MISRGRU processes a variable number of low-resolution input frames through a shared CNN encoder
+followed by a ConvGRU fusion layer, and decodes the resulting hidden state into a single
+super-resolved output.
+Crucially, the model is trained end-to-end to approximate the classical SOFI image directly,
+bypassing the explicit cumulant computation.
+With as few as 8 frames the model achieves image quality comparable to second-order SOFI,
+at an inference latency of approximately 27\,ms per reconstruction --- a roughly 400-fold
+acceleration over the classical algorithm~\cite{resurf2024}.
+Quality is quantified using decorrelation analysis for resolution estimation, and the re-scaled
+Pearson correlation (RSP) for structural fidelity, mirroring the evaluation protocol of the
+original SOFI literature.
+The primary limitation of MISRGRU is its sequential fusion stage: because each ConvGRU step
+depends on the previous hidden state, the fusion cannot be parallelised, and inference time
+scales linearly with the number of input frames.
+A detailed architectural description is given in Section~\ref{sssec:misrgru_bg}.
 
 \subsubsection{TR-MISR: Multiimage Super-Resolution Based on Feature Fusion With Transformers}
-TR-MISR~\cite{TR-MISR-original} adapts the Transformer to the multi-image 
-super-resolution (MISR) problem, where low-resolution satelite images of the same scene 
-must be fused into a single high-resolution reconstruction. They report improved 
-robustness to noise which allows the model to receive more unclear input images 
-without performance degradation. ConvGRU on which RESURF is based has low antinoise ability, 
-due to the lack of attention mechanism \cite{TR-MISR-original}. 
-In this thesis we adapt TR-MISR to microscopy super-resolution:
+TR-MISR~\cite{TR-MISR-original} adapts the Transformer to the multi-image
+super-resolution (MISR) problem, originally demonstrated on the PROBA-V satellite dataset, where
+$N$ low-resolution images of the same ground patch must be fused into a single high-resolution
+reconstruction.
+Rather than processing frames sequentially as a recurrent network does, TR-MISR encodes all $N$
+frames in parallel and applies self-attention \emph{across frames} at each spatial location: the
+$N$ feature vectors at a given pixel form a sequence, and a learnable aggregation token collects
+cross-frame information via multi-head attention.
+Because all frames are attended to simultaneously, every frame contributes symmetrically to the
+output regardless of its position in the input sequence.
+TR-MISR also demonstrates improved robustness to noisy or partially occluded input frames,
+a property the authors attribute to the attention mechanism's ability to down-weight uninformative
+inputs dynamically~\cite{TR-MISR-original}; ConvGRU-based models lack this capability because
+their gating is driven by sequential state rather than global frame context.
+In this thesis we adapt TR-MISR to the fluorescence microscopy super-resolution task, replacing
+the PixelShuffle decoder with transposed convolutions suited to the non-integer $2n{-}7$ SOFI
+upscaling factor.
 The full architectural description and comparison with MISRGRU are given in
 Section~\ref{sssec:trmisr_bg}.
 
@@ -454,11 +479,13 @@ The decoder applies a $1\times1$ convolution to rearrange channels, followed by 
 
 \paragraph{Key properties.}
 Because the Transformer attends to all $N$ frames simultaneously, TR-MISR processes frames
-in parallel which avoids the $O(N)$ sequential bottleneck of the ConvGRU.
+in parallel which avoids sequential processing of the ConvGRU.
 The fusion is also \emph{permutation invariant}: the self-attention treats the $N$ frame features
 as an unordered set, since no positional encoding is applied along the frame dimension.
-This is appropriate for satellite data where the acquisition order is not meaningful, but requires
-modification for SOFI where temporal blinking order does carry information (see Section~\ref{sec:fusion}).
+This aligns naturally with the SOFI algorithm, which estimates cumulants from fluorescence 
+fluctuations and, in its standard zero-lag formulation, is invariant to the ordering of frames. 
+Therefore, treating the input sequence as an unordered set. 
+
 
 \begin{figure}[htbp]
   \centering
