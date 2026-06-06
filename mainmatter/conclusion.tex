@@ -1,9 +1,134 @@
 \chapter{Conclusion}
 \label{chapter:conclusion}
-%% Target length: ~2 pages
-%% Concisely answer each research question (Q1–Q4).
-%% Summarise best-performing configuration.
-%% State achieved fps and spatial resolution relative to SOFI baseline.
-%% Closing statement on practical impact for live-cell imaging.
 
-\emph{A conclusion...}
+This thesis investigated two complementary questions: whether replacing the sequential
+ConvGRU fusion in SOFI-MISRGRU with a Transformer's parallel attention fusion yields
+better super-resolution quality or lower latency. Secondly, whether MISRGRU can be 
+restructured into a streaming architecture that produces one super-resolved output per 
+incoming frame, enabling continuous real-time SR video rather than periodic batch outputs.
+Both questions were evaluated on a synthetic fluorescence microscopy dataset spanning
+twelve SNR conditions (three blinking speeds $\times$ four photon levels), using the
+resolution-scaled Pearson correlation (RSP) and decorrelation analysis as primary metrics
+to match the evaluation protocol of the foundational RESURF work~\cite{resurf2024}.
+
+\section*{TR-MISR versus MISRGRU}
+
+The TR-MISR architecture, adapted from the satellite SR domain to second-order SOFI upscaling
+($2H{-}7$ output size), produces SR reconstructions that are competitive with the 20-frame
+MISRGRU foundational model.
+On fast-blinking and high-SNR conditions the two architectures perform similarly in RSP;
+on slow-blinking and low-SNR conditions, TR-MISR holds its quality while MISRGRU degrades
+more sharply and exhibits hallucinated filaments.
+The advantage of the attention mechanism is therefore most visible precisely where it
+matters most for live-cell imaging: difficult acquisitions with sparse blinking events and
+low photon counts.
+
+TR-MISR does not, however, outperform MISRGRU on raw inference latency.
+At $N{=}20$ frames the lightest TR-MISR configuration (1 attention head, 1 Transformer
+layer; 1h1d) takes 262\,ms per reconstruction compared to 170\,ms for MISRGRU on the same
+hardware.
+An ablation across four Transformer sizes (1h1d through 8h6d) showed that RSP saturates
+immediately: quality does not improve meaningfully beyond 1h1d despite a $3\times$ increase
+in parameters.
+Latency, by contrast, grows steeply. From 88\,ms to 209\,ms at $N{=}8$ going from 1h1d
+to 4h3d.
+The encoder and decoder are the architectural bottleneck for quality, not the size 
+of the fusion module.
+Future TR-MISR improvements should target deeper residual encoders or deformable
+convolutional decoders rather than larger Transformers.
+
+\section*{Frame generalisation of TR-MISR}
+
+The most practically useful property of the Transformer fusion module is its
+length-invariance at inference time.
+Because the cross-attention softmax redistributes weight over all input tokens rather than
+accumulating magnitude, the fused representation fed to the decoder remains at a stable
+scale regardless of how many frames are provided.
+% Measured decoder-input L2-norms confirm this: TR-MISR's fusion output varies by less than
+% 3\% as frame count increases from 8 to 30, whereas MISRGRU's summative GAP layer produces
+% norms that grow from 671 to 5\,786 over the same range for the 20-frame foundational model.
+
+This stability means that a TR-MISR model trained on 8 frames can be evaluated on 20 to 40
+frames at test time without retraining or architectural changes, if the memory allows it.
+Providing 20 frames to an 8-frame-trained model matches or exceeds the RSP of the
+20-frame MISRGRU baseline.
+A counterintuitive but robust finding is that an 8-frame-trained TR-MISR outperforms a
+20-frame-trained TR-MISR when both are evaluated on 20-frame inputs.
+Training under the tighter 8-frame budget forces the attention module to assign
+discriminative weights to every available frame; training on 20 frames risks over-saturating
+the cross-attention on redundant repeated blinking observations of the same fluorophores.
+The practical consequence is that TR-MISR can be trained on short sequences, reducing
+compute cost and training time, while the researcher retains the option of feeding a
+longer sequence at inference for improved quality.
+
+\section*{Streaming MISRGRU and real-time deployment}
+
+The streaming MISRGRU variant, which emits one super-resolved frame for every input frame
+by carrying the ConvGRU hidden state across the entire acquisition without resetting,
+addresses the throughput bottleneck of the batch model.
+Batch MISRGRU produces one SR output per $N$ acquired frames; the streaming model produces
+one SR output per frame.
+
+At $N{=}20$ frames on a 512$\times$512 field of view, the streaming model takes
+11.29\,ms per SR output on an NVIDIA RTX A5000 which is a $15\times$ improvement over the batch
+model's 170.29\,ms per output at the same frame count.
+At 20 accumulated frames the streaming model's RSP converges to the batch model's value,
+and it continues to improve beyond that point as the GRU accumulates more context across
+the acquisition a capability the batch model lacks entirely. S
+
+Training the streaming model required truncated backpropagation through time (TBPTT) to
+keep memory tractable for long sequences.
+Supervising only the last $n$ frames of each TBPTT chunk was critical: supervising every
+frame from the first step prevented the GRU from learning to defer quality improvements to
+later frames.
+An ablation across TBPTT window length, loss function, GRU width, and decoder type
+determined the final configuration: LLN35 supervision window, Fourier-only loss, a single
+48-channel ConvGRU, and a transposed-convolution decoder.
+% The Fourier-only loss was preferred because L1 supervision over the background-dominated
+% pixel distribution suppresses fine structural detail; the frequency-domain loss penalises
+% missing high-frequency structure directly.
+
+\section*{Motion reconstruction}
+
+The static streaming model was further extended to handle inter-frame sample motion, which
+is unavoidable in live-cell imaging.
+Two strategies were evaluated: direct finetuning on motion-augmented data, and the addition
+of a Deformable Phase-space Alignment (DPA) module that corrects the GRU hidden state
+into the coordinate frame of the current input before the recurrent update.
+At 0.2\,px/frame motion speed the DPA variant reached an RSP of 0.889 on fast-high-SNR
+conditions, close to the static baseline of 0.905, while the finetune-only variant scored
+0.863.
+Visual inspection confirmed that the DPA model produces less ghosting and blur effects
+from misaligned hidden states.
+
+\todo{change retain competitive RSP}
+Both motion-capable models retain competitive RSP on static test data; the degradation is
+concentrated in slow-low-SNR conditions where temporal averaging is most valuable.
+For deployment, the unmodified streaming model is preferred when the sample is stationary
+or drift is sub-pixel; the DPA variant should be selected when the specimen exhibits
+visible drift relative to the field of view.
+
+\section*{Summary and outlook}
+
+Taken together, the results confirm that deep-learning SR models can produce
+second-order-SOFI-quality reconstructions from as few as 8 fluorescence frames in a
+fraction of the time required by classical SOFI.
+TR-MISR's attention mechanism provides robust quality under low-SNR conditions and a
+practically valuable frame-count generalization property that the GRU cannot match.
+The streaming MISRGRU architecture removes the batch acquisition bottleneck entirely,
+delivering continuous SR video at 11\,ms per frame, comfortably within the 25\,ms budget
+of a 40\,fps acquisition, while converging to the quality of the foundational batch model.
+
+All quantitative results are obtained on synthetic simulated microtubule data.
+Transfer to real experimental microscope data remains an open step before the actual deployment.
+% A promising route for domain adaptation is to fine-tune the network on a short sequence
+% of blank background frames that capture the specific camera noise and PSF of the target
+% microscope.
+Additionally, higher-order SOFI targets (third or fourth cumulants) could be incorporated
+to push spatial resolution further; the decoder architecture is straightforwardly
+extensible to this setting.
+
+The combination of a streaming output model achieving real-time SR video
+and a Transformer that robustly aggregates frames under challenging imaging conditions
+brings deep-learning super-resolution microscopy a meaningful step closer to routine use
+in real-time live-cell biology.
