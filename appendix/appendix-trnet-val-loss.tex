@@ -1,0 +1,16 @@
+\chapter{TR-MISR Validation Loss}
+\label{app:tr-misr-val-loss}
+
+Figure~\ref{fig:tr-misr-val-loss} compares L1 Fourier loss on validation set during training.
+The data is taken directly from tensorboard. Despite the 20 frame model achieving lower loss 
+compared to 8 frame model, when both models are evaluated with 20 input frames the 8 frame TR-MISR
+reaches better reconstruction accuracy measured with resolution scaled pearson correlation (RSP).
+More detail in Section~\ref{ssec:trnet_8f_vs_20f}.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\linewidth]{figures/val_loss_8vs20frames.png}
+  \caption{Comparison of validation loss per epoch when training TR-MISR with 8 and 20
+   input frames.}
+  \label{fig:tr-misr-val-loss}
+\end{figure}

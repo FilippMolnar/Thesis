@@ -221,7 +221,8 @@ Section~\ref{ssec:kbuf_misrgru} analyses this effect quantitatively.
 
 To understand whether training on more frames improves TRNet, we trained an additional
 model on 20-frame sequences and compared it against the 8-frame trained model across
-$N \in \{20, 30\}$ input frames at test time.
+$N \in \{20, 30\}$ input frames at test time. Both models were trained for 100 epochs.
+Loss functions are in the Appendix~\ref{app:tr-misr-val-loss}
 Figure~\ref{fig:boxplot_rsp_20fvs8f} shows the RSP distributions for both models.
 
 
@@ -495,7 +496,7 @@ occurred under slow blinking and high SNR.
 This is expected: under slow blinking each emitter's on/off cycle is long relative to the
 accumulation window, so 20 frames undersample the fluctuation statistics, and additional
 frames capture more independent blinking events and yield a better cumulant estimate. 
-\ref{fig:Qualitative_comparison}.
+(Figure~\ref{fig:Qualitative_comparison}).
 
 Decorrelation analysis estimates the ground-truth images themselves at approximately
 139 nm, which sets the resolution ceiling that the model could reach if it reconstructed
@@ -553,6 +554,47 @@ SH: Slow high SNR, SL: Slow low SNR}
   \label{fig:Qualitative_comparison}
 \end{figure}
 
+\subsection{Finding the Optimal Accumulation Window}
+\label{ssec:accumulating_frames}
+Accumulating more frames improves reconstruction quality, but at the cost of temporal
+resolution, since each additional frame delays the moment a fully-informed reconstruction
+becomes available. To find the point at which this trade-off saturates, we fed the streaming
+MISRGRU sequences of up to 500 frames and recorded the RSP of the output after
+$N \in \{8, 20, 50, 75, 100, 200, 300, 400, 500\}$ accumulated frames. Because each simulated
+acquisition contains only 100 frames, the sequence is looped once all 100 frames have been
+ingested. The experiment was run on the four corner SNR conditions (FH, FL, SH, SL);
+Figure~\ref{fig:accumulating_frames} reports the resulting RSP distributions.
+
+Across all conditions, RSP rises steeply over the first $\sim$50 frames and then plateaus.
+The fast conditions (FH, FL) reach their plateau earliest, exceeding $0.92$ by 50 frames,
+whereas the slow conditions improve more gradually: the slow/low-SNR case (SL) climbs from
+$\sim$0.65 at 8 frames to its peak near $0.90$ only around 75 frames, since each emitter's
+on/off cycle is long relative to the frame rate and more frames are needed before the window
+samples enough independent blink events.
+
+Beyond this peak, quality no longer improves and the slow conditions even decline slightly:
+SL falls from $\sim$0.90 at 75 frames to $\sim$0.85 by 200 frames and stays there, while SH
+settles just below its peak. The fast conditions hold their plateau out to 500 frames. This
+decline in the high-frame regime should be read with caution, since past 100 frames the
+looped sequence re-presents already-seen frames rather than new fluctuation statistics. Taken
+together, accumulating roughly 50--75 frames captures essentially all of the attainable
+quality while keeping the temporal resolution as high as possible, making it the preferred
+operating point for the streaming model.
+
+Notably, this saturation point coincides with the training window: the streaming model was
+supervised only on the first 50 frames of each simulated acquisition, so it is hard to tell
+whether the model is genuinely unable to integrate information beyond 50 accumulated frames or
+whether the cumulant estimate itself has simply saturated.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=1.0\linewidth]{figures/streaming_boxplot_snr_01_04_09_12.png}
+  \caption{RSP of the streaming MISRGRU as a function of the number of accumulated input
+  frames, for the four corner SNR conditions (FH: 01\_fast\_p100, FL: 04\_fast\_p40,
+  SH: 09\_slow\_p100, SL: 12\_slow\_p40). Quality rises steeply over the first $\sim$50 frames
+  and then saturates; the slow conditions show a mild decline once past their peak.}
+  \label{fig:accumulating_frames}
+\end{figure}
 
 
 % \subsection{Practical Implications for Real-Time Imaging}

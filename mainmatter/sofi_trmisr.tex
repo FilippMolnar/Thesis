@@ -206,18 +206,68 @@ This has two limitations for real-time live-cell imaging.
 First, for every new incoming frame the entire $N$-frame sequence must be re-encoded and re-processed
 from scratch, which is redundant since the ConvGRU hidden state $\mathbf{h}_N$ already encodes a
 summary of all previous frames.
-Second, the batch model is many-to-one: it produces one output per $N$ input frames. 
-To super-resolve a full movie, the entire sequence would need to be processed in rolling windows which 
+Second, the batch model is many-to-one: it produces one output per $N$ input frames.
+To super-resolve a full movie, the entire sequence would need to be processed in rolling windows which
 again introduces the computational redundancy.
+
+This section develops a family of MISRGRU variants that progressively address these
+limitations. Table~\ref{tab:misrgru_variants} previews all six models, their architectural
+modifications, and how they are trained; each is described in detail in the subsections that
+follow and evaluated in Chapter~\ref{ch:results}.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Overview of the MISRGRU model variants studied in this thesis. The output mode
+  $N{\to}1$ denotes one SR image per $N$ input frames (batch); $N{\to}N$ denotes one SR
+  output per incoming frame (streaming). All streaming variants reuse the encoder and decoder
+  of the batch model and differ only in hidden-state handling, added modules, and training.}
+  \label{tab:misrgru_variants}
+  \small
+  \begin{tabularx}{\linewidth}{@{}l c X X@{}}
+    \toprule
+    \textbf{Model} & \textbf{Output} & \textbf{Modification} & \textbf{Training strategy} \\
+    \midrule
+    Batch MISRGRU (foundational) & $N{\to}1$  &
+    RESURF\cite{resurf2024} ConvGRU baseline; GAP aggregates all hidden states $h_1\dots h_N$;
+    state reset per sample. &
+    Fourier loss on model output and SOFI target.\\
+    \addlinespace
+    Sliding-window MISRGRU & $N{\to}N$ &
+    Circular buffer of the last $n$ hidden states; hidden states are cached only $n$-th is computed. 
+    GAP aggregates only the windowed states before decoding. &
+    No training needed, reuses weights from the Batch MISRGRU. \\
+    \addlinespace
+    Streaming MISRGRU & $N{\to}N$ &
+    GAP module removed; decoder reconstructs from the last hidden state $h_k$ alone; state
+    never reset. Ability to aggregate more information over time. &
+    Truncated BPTT (TBPTT) with chunking and \texttt{loss\_last\_n} supervision; Fourier loss. \\
+    \addlinespace
+    Larger GRU & $N{\to}N$ &
+    Streaming MISRGRU with increased ConvGRU hidden-state capacity (95k\,$\to$\,131k params). &
+    Trained from scratch with TBPTT ($\approx$190 epochs, DelftBlue); gives best static accuracy. \\
+    \addlinespace
+    Fine-tuned MISRGRU & $N{\to}N$ &
+    Streaming MISRGRU architecture, no new modules. &
+    Initialised from baseline Fourier weights and fine-tuned for 100 epochs on
+    motion-augmented data. \\
+    \addlinespace
+    MISRGRU with DPA & $N{\to}N$ &
+    Adds a Deformable Phase-space Alignment module (RFFT phase correction + deformable
+    convolution) that aligns $h_{t-1}$ to $f_t$ before the recurrent update. &
+    Zero-initialised module fine-tuned from baseline Fourier weights for 300 epochs on
+    motion-augmented data. \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
 
 \subsection{Converting MISRGRU to many-to-many}
 \label{sec:streaming_arch}
 Architecture where many inputs can many produce many outputs would address both 
 problems: one SR image is produced per incoming frame, 
 and the GRU hidden state is carried across frames rather than reset between batches. 
-This way the model
-could accumulate more context which can help to better reconstruct, while keeping the 
-latecy lower per reconstructed image
+This way the model could accumulate more information from input frames,
+which can help to better reconstruct, while keeping the latecy low per 
+reconstructed image.
 
 
 \subsubsection{Sliding-window MISRGRU}
@@ -299,6 +349,7 @@ quality, which prevents the GRU from learning to defer quality improvements to l
 
 \subsubsection{Deformable Phase-space Alignment modification(DPA)}
 \label{sssec:dpa}
+\todo{add figure explaining DPA}
 
 In live-cell imaging, the imaged structure can drift between frames, meaning
 $\mathbf{h}_{t-1}$ may encode a field of view that has shifted relative to the
