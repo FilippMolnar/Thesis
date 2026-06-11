@@ -90,17 +90,54 @@ can combine more input images which enchances the reconstruction quality while
 enabling uninterrupted super-resolution video generation from dynamic samples in real-time.
 
 
-% The main contributions of this thesis are:
+\section{Research Questions}
+\label{sec:research_questions}
 
-% \begin{enumerate}
-% \item Adaptation and evaluation of the TR-MISR transformer-based fusion
-%       architecture for fluorescence microscopy super-resolution.
-% \item Systematic comparison of TR-MISR and SOFI-MISRGRU across multiple SNR
-%       conditions on simulated fluorescence microscopy data.
-% \item Development of a streaming SOFI-MISRGRU architecture that produces one
-%       super-resolved output per input frame, enabling continuous reconstruction
-%       without fixed-window batch constraints,.
-% \end{enumerate}
+The SOFI-MISRGRU baseline establishes that deep learning can recover second-order SOFI
+quality from a handful of frames, but it leaves two limitations open. Its ConvGRU fusion is
+\emph{sequential}, so each frame must wait for the previous hidden state, and it aggregates
+frames through an unnormalised summation whose magnitude grows with the number of inputs,
+preventing the model from generalising beyond its training frame count. Secondly, the GAP summates 
+redundant similar information together. Both limitations are
+addressed in this thesis. 
+
+\begin{description}
+  \item[\textbf{RQ1.}] Does parallel, attention-based fusion (TR-MISR) match or surpass the
+    recurrent ConvGRU fusion (SOFI-MISRGRU) in super-resolution quality across signal-to-noise
+    and blinking conditions, and at what inference-latency cost?
+  % \item[\textbf{RQ2.}] How does each fusion mechanism behave when the number of input frames
+  %   at inference differs from the number seen during training, and what explains the
+  %   difference?
+  \item[\textbf{RQ2.}] Can SOFI-MISRGRU be restructured into a streaming architecture that
+    emits one super-resolved image per incoming frame, enabling continuous real-time SR video,
+    and how does its quality and per-output latency compare to the batch model?
+  \item[\textbf{RQ3.}] How does inter-frame sample motion degrade SR quality, 
+  and does fine-tuning with motion augmentation recover it?
+\end{description}
+
+\section{Contributions}
+\label{sec:contributions}
+
+In answering these questions, this thesis makes the following contributions:
+
+\begin{enumerate}
+  \item Adaptation of the TR-MISR transformer fusion module to second-order SOFI
+    super-resolution, including a single-channel encoder, a decoder for the non-integer
+    $2n{-}7$ upscaling, a corrected attention-score scaling, and a CrossAttentionAggregator
+    that separates frame-to-frame communication from final feature aggregation
+    (Chapter~\ref{ch:method}).
+  \item A systematic comparison of TR-MISR and SOFI-MISRGRU across twelve SNR conditions,
+    showing that attention-based fusion holds its quality under low-SNR, slow-blinking
+    acquisitions where the GRU degrades (Chapter~\ref{ch:results}).
+  \item An analysis of the frame-count generalisation of both architectures, tracing
+    MISRGRU's degradation to its unnormalised aggregation and showing that TR-MISR trained on
+    eight frames can be evaluated on longer sequences without retraining.
+  \item A streaming SOFI-MISRGRU that produces one super-resolved output per input frame,
+    reaching the batch baseline and improving with more accumulated frames. 
+  \item A motion-robust extension of the streaming model, combining motion-augmented training with 
+    a Deformable Phase-space Alignment module that sustains reconstruction quality under
+    inter-frame sample drift.
+\end{enumerate}
 
 \section{Thesis Outline}
 
