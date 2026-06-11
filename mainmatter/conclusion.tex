@@ -11,7 +11,7 @@ twelve SNR conditions (three blinking speeds $\times$ four photon levels), using
 resolution-scaled Pearson correlation (RSP) and decorrelation analysis as primary metrics
 to match the evaluation protocol of the foundational RESURF work~\cite{resurf2024}.
 
-\section*{TR-MISR versus MISRGRU}
+\section*{TR-MISR versus MISRGRU (RQ1)}
 
 The TR-MISR architecture, adapted from the satellite SR domain to second-order SOFI upscaling
 ($2H{-}7$ output size), produces SR reconstructions that are competitive with the 20-frame
@@ -61,7 +61,7 @@ The practical consequence is that TR-MISR can be trained on short sequences, red
 compute cost and training time, while the researcher retains the option of feeding a
 longer sequence at inference for improved quality.
 
-\section*{Streaming MISRGRU and real-time deployment}
+\section*{Streaming MISRGRU and real-time deployment (RQ2)}
 
 The streaming MISRGRU variant, which emits one super-resolved frame for every input frame
 by carrying the ConvGRU hidden state across the entire acquisition without resetting,
@@ -88,7 +88,7 @@ determined the final configuration: LLN35 supervision window, Fourier-only loss,
 % pixel distribution suppresses fine structural detail; the frequency-domain loss penalises
 % missing high-frequency structure directly.
 
-\section*{Motion reconstruction}
+\section*{Motion reconstruction (RQ3)}
 
 The static streaming model was further extended to handle inter-frame sample motion, which
 is unavoidable in live-cell imaging.

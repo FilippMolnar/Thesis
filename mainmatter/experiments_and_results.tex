@@ -470,7 +470,8 @@ how many frames are input.
 Streaming models are evaluated by feeding frames one at a time from the test set and measuring 
 RSP between the SR output at 20 and 100 accumulated frames compared 
 to the Ground Truth image for 4 different imaging conditions (photons/frame): 100(high-SNR) or 40 (low-SNR), and
-and blinking conditions (on time/ off time in ms): 10/600 (fast) or 10/2400 (slow). 
+and blinking conditions (on time/ off time in ms): 10/600 (fast) or 10/2400 (slow). The main benefit we want to test
+in this experiment is whether the model can achive better reconstruction results with more accumulated images. 
 
 Experiments with ablations and hyperparameter tunings are described in 
 appendix~\ref{app:streaming_misrgru_ablations}. The final best performing model is evaluated in this
@@ -483,14 +484,14 @@ section with following configuration:
 \end{itemize}
 
 At 20 accumulated frames the streaming model already matches or slightly exceeds the
-batch MISRGRU baseline on every condition (FH/FL/SH/SL: $0.913/0.913/0.884/0.878$
-vs.\ $0.911/0.901/0.875/0.858$).
-The benefit of TBPTT training becomes clear once more frames are accumulated: at 100 frames
+batch MISRGRU baseline on every condition (FH/FL/SH/SL: Streaming $0.913/0.913/0.884/0.878$
+vs.\ Batch $0.911/0.901/0.875/0.858$).
+With all accumulated frames from the acquisition (100 frames)
 RSP rises to $0.929/0.927/0.916/0.888$, a consistent gain over the 20-frame batch model
-that is most pronounced in the harder slow and low-SNR conditions
+that is more pronounced in the harder slow and low-SNR conditions
 (Figure~\ref{fig:lln35_vs_foundational_misrgru}).
-The batch MISRGRU cannot benefit in this way, as its fixed 20-frame input window prevents
-it from integrating additional context and TRMISR is limited by its compute and memory. 
+The batch MISRGRU cannot benefit in this way, as its fixed 20-frame input window and GAP fusion mechanism
+prevents it from integrating additional context and TRMISR is limited by its compute and memory. 
 The largest RSP gain, from $0.875$ to $0.916$, 
 occurred under slow blinking and high SNR.
 This is expected: under slow blinking each emitter's on/off cycle is long relative to the
@@ -498,7 +499,8 @@ accumulation window, so 20 frames undersample the fluctuation statistics, and ad
 frames capture more independent blinking events and yield a better cumulant estimate. 
 (Figure~\ref{fig:Qualitative_comparison}).
 
-Decorrelation analysis estimates the ground-truth images themselves at approximately
+
+\paragraph{Decorrelation analysis} estimates the ground-truth images themselves at approximately
 139 nm, which sets the resolution ceiling that the model could reach if it reconstructed
 the image perfectly.
 Accumulating more frames improves both metrics, but to differing degrees: RSP improves
@@ -565,21 +567,16 @@ acquisition contains only 100 frames, the sequence is looped once all 100 frames
 ingested. The experiment was run on the four corner SNR conditions (FH, FL, SH, SL);
 Figure~\ref{fig:accumulating_frames} reports the resulting RSP distributions.
 
-Across all conditions, RSP rises steeply over the first $\sim$50 frames and then plateaus.
-The fast conditions (FH, FL) reach their plateau earliest, exceeding $0.92$ by 50 frames,
-whereas the slow conditions improve more gradually: the slow/low-SNR case (SL) climbs from
-$\sim$0.65 at 8 frames to its peak near $0.90$ only around 75 frames, since each emitter's
-on/off cycle is long relative to the frame rate and more frames are needed before the window
-samples enough independent blink events.
-
+Across all conditions, quality improves with first $\sim$50 frames and then plateaus.
 Beyond this peak, quality no longer improves and the slow conditions even decline slightly:
-SL falls from $\sim$0.90 at 75 frames to $\sim$0.85 by 200 frames and stays there, while SH
-settles just below its peak. The fast conditions hold their plateau out to 500 frames. This
-decline in the high-frame regime should be read with caution, since past 100 frames the
-looped sequence re-presents already-seen frames rather than new fluctuation statistics. Taken
-together, accumulating roughly 50--75 frames captures essentially all of the attainable
+SL falls from $\sim$0.90 at 75 frames to $\sim$0.85 by 200 frames and stays there, while fast
+blinking dataset settles just below its peak. The fast conditions hold their plateau out to 500 frames. 
+This decline in the high-frame regime should be read with caution, since past 100 frames the
+looped sequence re-presents already-seen frames rather than new fluctuation statistics. 
+
+Taken together, accumulating roughly 50--75 frames captures essentially all of the attainable
 quality while keeping the temporal resolution as high as possible, making it the preferred
-operating point for the streaming model.
+operating point for the streaming model. 
 
 Notably, this saturation point coincides with the training window: the streaming model was
 supervised only on the first 50 frames of each simulated acquisition, so it is hard to tell
