@@ -638,34 +638,31 @@ The dpa model, however, produces slightly less ghosting effect which can be seen
 
 \begin{table}[h]
   \centering
-  \caption{RSP\,$\times 100$ at 20 accumulated frames across three motion conditions.
-  FH\,=\,fast/high-SNR, FL\,=\,fast/low-SNR, SH\,=\,slow/high-SNR, SL\,=\,slow/low-SNR. Best value per
-  condition in bold.}
+  \caption{RSP\,$\times 100$ at 20 accumulated frames across three motion conditions. FH\,=\,fast/high-SNR,
+  FL\,=\,fast/low-SNR, SH\,=\,slow/high-SNR, SL\,=\,slow/low-SNR. Best value per condition in bold.}
   \label{tab:rsp_combined}
   \begin{tabular}{lcccc}
   \toprule
   \textbf{Model} & \textbf{FH} & \textbf{FL} & \textbf{SH} & \textbf{SL} \\
   \midrule
   \multicolumn{5}{l}{\textit{Static (0.0\,px/frame)}} \\
-  DPA-DeformConv    & $87.2 \pm 3.6$ & $83.0 \pm 4.5$ & $79.9 \pm 2.6$ & $60.7 \pm 8.7$ \\
+  DPA-longer        & $\mathbf{92.7} \pm 0.7$ & $\mathbf{92.3} \pm 0.7$ & $88.4 \pm 0.9$ & $84.6 \pm 1.2$ \\
   Finetune-motion   & $88.9 \pm 1.0$ & $88.4 \pm 1.1$ & $84.3 \pm 1.5$ & $76.9 \pm 1.6$ \\
-  LLN35-larger-GRU  & $\mathbf{91.5} \pm 0.6$ & $\mathbf{91.1} \pm 0.7$ & $88.4 \pm 1.0$ & $87.7 \pm
-  1.1$ \\
+  LLN35-larger-GRU  & $91.5 \pm 0.6$ & $91.1 \pm 0.7$ & $88.4 \pm 1.0$ & $87.7 \pm 1.1$ \\
   MISR-GRU          & $91.2 \pm 0.5$ & $90.0 \pm 0.6$ & $87.6 \pm 0.9$ & $85.8 \pm 1.0$ \\
-  TR-MISR           & $90.7 \pm 0.8$ & $90.5 \pm 0.9$ & $\mathbf{89.6} \pm 1.2$ & $\mathbf{88.5} \pm
-  1.2$ \\
+  TR-MISR           & $90.7 \pm 0.8$ & $90.5 \pm 0.9$ & $\mathbf{89.6} \pm 1.2$ & $\mathbf{88.5} \pm 1.2$ \\
   \midrule
   \multicolumn{5}{l}{\textit{Moving (0.2\,px/frame\,$\approx 2.0\,\mu$m/s)}} \\
-  DPA-DeformConv    & $\mathbf{88.9} \pm 1.9$ & $\mathbf{87.3} \pm 2.0$ & $\mathbf{82.9} \pm 2.3$ &
-  $\mathbf{74.8} \pm 2.9$ \\
+  DPA-longer        & $\mathbf{93.3} \pm 0.7$ & $\mathbf{92.7} \pm 0.9$ & $\mathbf{89.5} \pm 1.2$ & $\mathbf{85.7} \pm
+  1.7$ \\
   Finetune-motion   & $86.3 \pm 1.5$ & $83.5 \pm 2.2$ & $73.4 \pm 2.5$ & $65.4 \pm 2.5$ \\
   LLN35-larger-GRU  & $69.2 \pm 6.5$ & $67.5 \pm 7.1$ & $62.8 \pm 6.9$ & $57.9 \pm 7.3$ \\
   MISR-GRU          & $69.0 \pm 6.8$ & $64.5 \pm 7.7$ & $60.5 \pm 7.4$ & $50.5 \pm 7.6$ \\
   TR-MISR           & $72.3 \pm 6.1$ & $70.4 \pm 6.5$ & $68.9 \pm 6.5$ & $63.4 \pm 6.6$ \\
   \midrule
   \multicolumn{5}{l}{\textit{Moving (0.5\,px/frame\,$\approx 5.0\,\mu$m/s)}} \\
-  DPA-DeformConv    & $\mathbf{88.0} \pm 2.0$ & $\mathbf{85.8} \pm 2.1$ & $\mathbf{80.0} \pm 2.6$ &
-  $\mathbf{70.3} \pm 4.3$ \\
+  DPA-longer        & $\mathbf{92.9} \pm 0.9$ & $\mathbf{92.3} \pm 1.0$ & $\mathbf{89.1} \pm 1.4$ & $\mathbf{84.8} \pm
+  1.6$ \\
   Finetune-motion   & $85.4 \pm 1.5$ & $81.9 \pm 2.0$ & $69.9 \pm 2.4$ & $60.5 \pm 2.2$ \\
   LLN35-larger-GRU  & $55.9 \pm 7.0$ & $53.5 \pm 6.9$ & $46.3 \pm 7.2$ & $38.2 \pm 6.8$ \\
   MISR-GRU          & $54.6 \pm 8.2$ & $49.1 \pm 8.2$ & $43.0 \pm 8.3$ & $29.6 \pm 6.5$ \\
