@@ -603,32 +603,45 @@ whether the cumulant estimate itself has simply saturated.
 
 \section{Motion reconstruction}
 \label{sec:alignment_ablation}
-With fast (11ms inference per frame) streaming MISRGRU we decided to explore motion
-reconstruction capabilities. 
+The low per-frame latency of the streaming MISRGRU makes it a natural
+candidate for imaging samples that move during acquisition, where the static-scene
+assumption underlying SOFI breaks down. We therefore evaluated how well the streaming
+models reconstruct moving microtubule structures.
 
-To evaluate whether explicit inter-frame alignment improves the streaming GRU, we trained
-an additional variant incorporating the Deformable Phace-space Alignment module (DPA) 
-inspired by \cite{qiao2025dpatisr} and baseline fourier streaming MISRGRU.
-The exact implementation details are described in subsection~\ref{sssec:dpa}.
-Both \texttt{finetune motion} and \texttt{DPA deformable conv} were finetuned on baseline fourier
-weights~\ref{fig:largergru_vs_fourierbaseline} for 100 epochs.
+To test whether explicit inter-frame alignment helps, we trained a streaming variant
+incorporating the Deformable Phase-space Alignment module (DPA) inspired by
+\cite{qiao2025dpatisr}; implementation details are given in subsection~\ref{sssec:dpa}.
+Both motion variants were initialised from the converged fourier baseline streaming MISRGRU weights
+(Figure~\ref{fig:largergru_vs_fourierbaseline}) and finetuned on motion-augmented data.
+The plain motion-finetuned model (\texttt{Finetune-motion}) was trained for 100 epochs;
+because the DPA variant converged faster and reached higher reconstruction quality, we
+trained it with lln35 weights (Figure~\ref{fig:lln10vslln35}) for 169 epochs
+(\texttt{DPA}). 
+The remaining three rows of Table~\ref{tab:rsp_combined} are 
+unmodified, static-trained baselines included as
+references: the larger streaming GRU (\texttt{LLN35-larger-GRU}), the batch
+\texttt{MISR-GRU}, and the batch \texttt{TR-MISR}.
 
-We evaluated the reconstruction accuracy of the streaming models under motion conditions at 
-varying acquisition speeds (static, $\approx 2.0\,\mu$m/s, and $\approx 5.0\,\mu$m/s).
+We evaluated reconstruction accuracy under three acquisition speeds (static,
+$\approx 2.0\,\mu$m/s, and $\approx 5.0\,\mu$m/s) across the four corner SNR conditions
+(FH, FL, SH, SL).
 
-Table~\ref{tab:rsp_combined} compares the reconstruction accuracy using RSP metric of motion shifted 
-low resolution frames accross different speeds and imaging conditions.
-Demonstrating that the streaming variants finetuned on motion augmented data 
-maintain strong reconstruction quality. On $2.0\,\mu$m/s speed and fast blinking the DPA model achieves 
-a comparable performance to static reconstruction of TR-MISR ($88.9 \pm 1.9$ vs $90.7 \pm 0.8$) where both 
-TRMISR and MISRGRU fall below $73$. On slow blinking the DPA model degrades much more, which is understandable
-as less fluorophores are ON at the same time giving less information about the micrtotubal structure.
+Table~\ref{tab:rsp_combined} reports the RSP at 20 accumulated frames. The motion-augmented
+DPA streaming variant retains strong reconstruction quality on both static and moving samples, whereas the
+static-trained baselines collapse. At $2.0\,\mu$m/s and fast blinking the \texttt{DPA}
+model on moving data matches its own static performance and even exceeds the static
+\texttt{TR-MISR} baseline ($93.3 \pm 0.7$ vs.\ $90.7 \pm 0.8$), while the static-trained
+\texttt{TR-MISR} and \texttt{MISR-GRU} fall below $73$ at the same speed. As expected,
+absolute quality is lower in the slow-blinking conditions (SH, SL) for every model, since
+fewer fluorophores are simultaneously ON and each accumulated frame carries less
+information about the underlying microtubule structure.
 
-Both TRMISR and batch MISRGRU are unable to reconstruct the moving samples (Figure~\ref{fig:motion_visual_comparison}). 
-They seem to be adding seen blinks to the reconstructed image without understanding the 
-underlying structure where the reconstructed image resembles an averaged blur.
-Finetuning the baseline streaming model and the DPA variant show fine detail in the image. 
-The dpa model, however, produces slightly less ghosting effect which can be seen in the top part of the image.
+The visual comparison in Figure~\ref{fig:motion_visual_comparison} mirrors these numbers.
+The static-trained \texttt{TR-MISR} and batch \texttt{MISR-GRU} cannot reconstruct the
+moving sample: they accumulate previously seen blinks without resolving the underlying
+structure, so the output resembles an averaged blur. Both motion-finetuned streaming models
+recover fine detail the \texttt{DPA} variant additionally shows slightly less
+ghosting, visible in the top part of the image.
 
 \begin{table}[h]
   \centering
@@ -640,14 +653,14 @@ The dpa model, however, produces slightly less ghosting effect which can be seen
   \textbf{Model} & \textbf{FH} & \textbf{FL} & \textbf{SH} & \textbf{SL} \\
   \midrule
   \multicolumn{5}{l}{\textit{Static (0.0\,px/frame)}} \\
-  DPA-longer        & $\mathbf{92.7} \pm 0.7$ & $\mathbf{92.3} \pm 0.7$ & $88.4 \pm 0.9$ & $84.6 \pm 1.2$ \\
+  DPA        & $\mathbf{92.7} \pm 0.7$ & $\mathbf{92.3} \pm 0.7$ & $88.4 \pm 0.9$ & $84.6 \pm 1.2$ \\
   Finetune-motion   & $88.9 \pm 1.0$ & $88.4 \pm 1.1$ & $84.3 \pm 1.5$ & $76.9 \pm 1.6$ \\
   LLN35-larger-GRU  & $91.5 \pm 0.6$ & $91.1 \pm 0.7$ & $88.4 \pm 1.0$ & $87.7 \pm 1.1$ \\
   MISR-GRU          & $91.2 \pm 0.5$ & $90.0 \pm 0.6$ & $87.6 \pm 0.9$ & $85.8 \pm 1.0$ \\
   TR-MISR           & $90.7 \pm 0.8$ & $90.5 \pm 0.9$ & $\mathbf{89.6} \pm 1.2$ & $\mathbf{88.5} \pm 1.2$ \\
   \midrule
   \multicolumn{5}{l}{\textit{Moving (0.2\,px/frame\,$\approx 2.0\,\mu$m/s)}} \\
-  DPA-longer        & $\mathbf{93.3} \pm 0.7$ & $\mathbf{92.7} \pm 0.9$ & $\mathbf{89.5} \pm 1.2$ & $\mathbf{85.7} \pm
+  DPA        & $\mathbf{93.3} \pm 0.7$ & $\mathbf{92.7} \pm 0.9$ & $\mathbf{89.5} \pm 1.2$ & $\mathbf{85.7} \pm
   1.7$ \\
   Finetune-motion   & $86.3 \pm 1.5$ & $83.5 \pm 2.2$ & $73.4 \pm 2.5$ & $65.4 \pm 2.5$ \\
   LLN35-larger-GRU  & $69.2 \pm 6.5$ & $67.5 \pm 7.1$ & $62.8 \pm 6.9$ & $57.9 \pm 7.3$ \\
@@ -655,7 +668,7 @@ The dpa model, however, produces slightly less ghosting effect which can be seen
   TR-MISR           & $72.3 \pm 6.1$ & $70.4 \pm 6.5$ & $68.9 \pm 6.5$ & $63.4 \pm 6.6$ \\
   \midrule
   \multicolumn{5}{l}{\textit{Moving (0.5\,px/frame\,$\approx 5.0\,\mu$m/s)}} \\
-  DPA-longer        & $\mathbf{92.9} \pm 0.9$ & $\mathbf{92.3} \pm 1.0$ & $\mathbf{89.1} \pm 1.4$ & $\mathbf{84.8} \pm
+  DPA        & $\mathbf{92.9} \pm 0.9$ & $\mathbf{92.3} \pm 1.0$ & $\mathbf{89.1} \pm 1.4$ & $\mathbf{84.8} \pm
   1.6$ \\
   Finetune-motion   & $85.4 \pm 1.5$ & $81.9 \pm 2.0$ & $69.9 \pm 2.4$ & $60.5 \pm 2.2$ \\
   LLN35-larger-GRU  & $55.9 \pm 7.0$ & $53.5 \pm 6.9$ & $46.3 \pm 7.2$ & $38.2 \pm 6.8$ \\
@@ -668,20 +681,14 @@ The dpa model, however, produces slightly less ghosting effect which can be seen
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=\textwidth]{figures/motion_visual_comparison_FH.png}
-  \caption{Visual comparison of finetuning streaming MISRGRU and dpa variant in motion reconstruction. 
-  The figure demonstrates the preservation of micrtotubal structures under $2 \mu m/s$ speed augmentation}
+  \includegraphics[width=\textwidth]{figures/motion_visual_comparison.png}
+  \caption{Visual comparison of finetuning streaming MISRGRU and DPA variant in motion reconstruction. 
+  The figure demonstrates the preservation of microtubule structures under $5\,\mu$m/s speed augmentation.}
   \label{fig:motion_visual_comparison}
 \end{figure}
 
 
-\textbf{Do models trained on moving data lose accuracy on static samples?}  
-\todo{need to retrain motion models properly until convergence to be able to say this}
-
-
-
-
-\subsection{Streaming Inference Latency}
+\subsection{Streaming Models Inference Latency}
 \label{ssec:streaming_latency}
 
 The architectural distinction between batch and streaming inference has a direct consequence
@@ -715,15 +722,17 @@ Models were benchmarked on an NVIDIA RTX A5000 using $512\times512$ input frames
   \label{tab:streaming_latency}
 \end{table}
 
-All three streaming variants are dramatically more efficient when it comes to producing reconstructed outputs,
-while reaching the same accuracy as batched MISRGRU at 20th frame and improving the accuracy with more frames.
-The base Streaming MISRGRU takes only 11.32\,ms to produce each SR frame, 
-MISRGRU's 170.29\,ms-per-output at the same frame count.
-This makes streaming MISRGRU variants very efficient in reconstructing the whole acquisition.
+All three streaming variants produce reconstructed outputs far more efficiently per frame:
+they match the accuracy of the batch MISRGRU by the 20th frame and continue to improve as
+more frames accumulate, while emitting one SR image per input frame rather than a single
+output after the full sequence. The base streaming MISRGRU produces each SR frame in only
+$11.29$\,ms and the DPA variant in $17.46$\,ms. Processing the full 20-frame sequence is
+nonetheless slower than the batch model ($226$\,ms and $349$\,ms versus $170$\,ms), because
+the decoder is invoked once per frame rather than a single time at the end.
 
-
-The overal reconstruction of 20 frames is slower compared to batch MISRGRU, this is because
-decoder layer is called 20 times rather than once.
+Both variants stay well under the $20$\,ms budget required for real-time reconstruction at
+$50$\,fps, making the streaming MISRGRU an efficient choice for reconstructing an entire
+acquisition continuously, frame by frame.
 
 
 % This improvement arises not from a reduction in computation but from amortising the
