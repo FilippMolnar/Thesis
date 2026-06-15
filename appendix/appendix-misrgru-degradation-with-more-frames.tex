@@ -1,0 +1,17 @@
+\chapter{MISRGRU degradation}
+\label{app:misrgru-degradation}
+
+When evaluating MISRGRU
+Figure~\ref{fig:misrgru-degradation} compares L1 Fourier loss on validation set during training.
+The data is taken directly from tensorboard. Despite the 20 frame model achieving lower loss 
+compared to 8 frame model, when both models are evaluated with 20 input frames the 8 frame TR-MISR
+reaches better reconstruction accuracy measured with resolution scaled pearson correlation (RSP).
+More detail in Section~\ref{ssec:trnet_8f_vs_20f}.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\linewidth]{figures/n_frame_comparison.png}
+  \caption{Comparison of TRMISR trained on 8 frames with MISRGRU trained on 8 and 20 frames. MISRGRU
+  on 20 frames is extended to 30 frames at evaluation.}
+  \label{fig:misrgru-degradation}
+\end{figure}
