@@ -2,6 +2,17 @@
 \chapter{Discussion}                                                                   
 \label{ch:discussion}                                                                  
                  
+Having real-time feedback of reconstruction matter a lot for live-cell imaging because 
+it could allow biologists to observe the live sample as it interacts with the world and interve 
+if something goes wrong.
+In a post-processing workflow the
+low-resolution frames are collected and reconstructed only afterwards, so failures such as
+focus drift, photobleaching, an incorrect exposure, or the cell moving out of the field of
+view may go unnoticed until the session is over and the data is analysed. A streaming
+reconstruction overcomes these problems while the experiment is still running, allowing the
+operator to refocus, reposition the sample, adjust the imaging parameters before the data
+quality degrades, or abort an unproductive acquisition early. This whole thesis aimed towards 
+how could such streaming reconstruction be implemented.
 
 \section{Does parallel attention improve upon recurrent fusion?}
                                                                                         
@@ -9,39 +20,37 @@ The main motivation of this work was to test whether replacing the sequential
 ConvGRU fusion in MISRGRU~\cite{resurf2024} with a Transformer's parallel
 self-attention would yield a meaningful improvement in either reconstruction quality 
 or inference speed:
-In aggregate RSP, TRNet with a shallow transofmer (1h1d) is competitive with
+In aggregate resolution scaled pearson correlation, TRMISR with a shallow transofmer (1h1d) is competitive with
 but does not consistently outperform the 20-frame MISRGRU foundational model on fast 
 blinking and high SNR conditions. However the attention advantage starts to show when models 
-are evaluated on worse conditions where TRNet achieved consistently higher RSP. 
+are evaluated on worse conditions where TRMISR achieved consistently higher RSP. This finding is consistent
+with our hypothesis that transformer fusion is more robust to noisy conditions.
 But on raw latency it is slower (262\,ms vs.\ 170\,ms at $N{=}20$,
 Table~\ref{tab:inference_latency}).                                                    
 Therefore, the attention mechanism does not give a clear answer wether to use it over convolutional
 recurrence as it depends on acquisition conditions such as blinking and signal-to-noise ratio and 
-compute constraints.                                                                              
-                      
-In TRMISR, the cross-attention softmax normalises over all input tokens, so the magnitude of the
+compute constraints.
+
+Practical advantage of TRMISR is that the     
+model trained on 8 frames can be infered on 20, 30 or 40 frames (if the memory allows it) 
+at test time with no architectural change, whereas extending MISRGRU beyond its training length 
+causes progressive reconstruction degradation. TRMISR's the cross-attention softmax normalises over all input tokens, so the magnitude of the
 fused representation remains stable regardless of how many frames are presented at inference      
 (Table~\ref{tab:decoder_input_norm}).
 Batch MISRGRU's summative GAP layer accumulates and oversaturates which degrades the output of the network 
 removing the ability of feeding more input frames at inference time.
-Practical advantage of TRMISR is that the     
-model trained on 8 frames can be evaluated on 20, 30 or 40 frames (if the memory allows it) 
-at test time with no architectural change, whereas extending MISRGRU beyond its training length 
-causes progressive reconstruction degradation.                                  
+                           
 This property is valuable in practice as it means that the model can be trained on shorter training sequences 
 reduce compute cost and convergence time, while the researcher still has the option of feeding more frames   
 for improved quality at inference. 
                                                                                         
-An additional finding reinforces this picture.                                         
+An additional finding reinforced this:                                         
 Counterintuitively, a TRNet trained on 8 frames outperforms one trained on 20 frames
 when both are evaluated on 20- or 30-frame inputs                                      
 (Figure~\ref{fig:boxplot_rsp_20fvs8f}).
 We believe this happened because the training under the   
 8-frame constraint forces the attention module to assign meaningful and more discriminative    
 weights to every available frame.                                                         
-This suggests a practical training strategy: train on the shortest frame count
-that captures the relevant blinking statistics, which at the simulated acquisition     
-rates corresponds to 8 frames.
                                                                                         
 Ablating the Transformer fusion across four configurations (1h1d, 2h2d, 4h3d, 8h6d)    
 shows that RSP does not improve meaningfully beyond 1h1d (Figure~\ref{fig:transformer_sizes}), 
@@ -53,52 +62,43 @@ Future improvements should focus on the encoder and decoder blocks (e.g.\ deeper
 blocks, deformable convolutions, preprocessing such as including average widefield) 
 rather than increasing the size of the transformers.                      
 
-\section{Practicality of Streaming MISRGRU}                                
-                
-While the TR-MISR vs.\ MISRGRU comparison answers the thesis's primary architectural   
-question, but the streaming MISRGRU variant addresses a separate and arguably more
-impactful problem: real-time super-resolution during microscope acquisitions.
+\section{Towards Video Super-Resolution - Streaming MISRGRU}                                
+With TRMISR's substantially slower latency and large memory requirements
+we saw clearer path to try optimize the MISRGRU for real-time video super-resolution 
+during microscope acquisitions.
+We explored reusing weights from foundational MISRGRU with sliding-window approach, quickly realizing the 
+GAP bottleneck as well as the hidden layer should already encode most of the features.
+
 The batch model produces one SR output per $N$ acquired frames; the streaming model
 produces one output per frame, amortising the processing cost over the entire $N$ Frame 
 acquisition.
-At $N{=}20$ frames on a 512$\times$512 field of view, streaming MISRGRU takes 11.29\,ms
+At $N{=}20$ frames on a 512$\times$512 field of view, streaming MISRGRU takes 11.29\,ms using PyTorch
 per SR output compared to 170.29\,ms for the batch model a $15\times$ improvement in
 per-output latency.
 
 Streaming MISRGRU RSP converges to the batch-model value by the 20th accumulated frame
-(Figure~\ref{fig:lln35_vs_largergrufourier}), and continues to improve beyond that     
-point as the GRU accumulates more context. This capability the batch model (MISRGRU and TRNet)
-lack entirely.
-
-Having real-time feedback of reconstruction matter a lot for live-cell imaging because 
-it could allow biologists to observe the live sample as it interacts with the world and interve 
-if something goes wrong.
-In a post-processing workflow the
-low-resolution frames are collected and reconstructed only afterwards, so failures such as
-focus drift, photobleaching, an incorrect exposure, or the cell moving out of the field of
-view may go unnoticed until the session is over and the data is analysed. A streaming
-reconstruction overcomes these problems while the experiment is still running, allowing the
-operator to refocus, reposition the sample, adjust the imaging parameters before the data
-quality degrades, or abort an unproductive acquisition early.
+(Figure~\ref{fig:accumulating_frames}), and continues to improve beyond that     
+point as the GRU accumulates more context. 
 
 We found that the reconstruction quality saturates at around 50 accumulated frames, which sets
 the practical operating point for the streaming model. At a 100\,fps acquisition rate this
 corresponds to a temporal resolution of 0.5\,s. Because the model emits one super-resolved
 output for every frame it receives, the reconstruction also captures motion implicitly: a
 structure that moves over the accumulation window appears blurred in the output, signalling
-the presence and direction of motion to the operator.  
+the presence and direction of motion to the operator.
 
-\section{Motion reconstruction robustness}                                                         
-Real-time imaging of moving structures was achieved with a              
+\section{Motion reconstruction robustness}                                                  
+Real-time imaging of moving structures was achieved with a           
 motion-augmented training.
 We compared finetuning the baseline model with adding 
-Deformable Phase-space Alignment (DPA) module.                                                                                
-At 0.2\,px/frame motion speed the DPA variant achieved similar RSP score to its static reference
+Deformable Phase-space Alignment (DPA) module.     
+At speeds up to $5\mu$m/s motion speed the DPA variant achieved similar RSP score to its static reference
 in the fast-high SNR condition, Finetuning the model also worked, however, during visual inspection
-DPA module showed less blur artefacts.
+DPA module showed less blur artefacts and faster convergence.
 
-Importantly, the motion-finetuned models does not retain as good performance on static data 
-as TRMISR or Streaming MISRGRU (Figure~\ref{fig:motion_snr_static}). 
+Importantly, the motion-finetuned DPA model outperforms staticaly trained Streaming MISRGRU
+ on both static and moving evaluation dataset. TRMISR still achieves higher reconstruction accuracy
+ on slow blinking and low signal-to-noise ratio images (Figure~\ref{fig:motion_snr_static}).
 
 Degradation concentrated in the slow conditions where temporal averaging is most valuable.
 This trade-off is expected: a model regularised to handle inter-frame displacement     
@@ -109,106 +109,42 @@ known to be stationary or the drift is below the model's tolerance; the
 motion-finetuned or DPA variant should be selected when the sample is expected to exhibits visible  
 drift relative to the field of view.
 
-% \section{Reflection}
-
-% Deep learning models emerge more often 
-
-% This work sits within a broader shift in the data-science and AI field: the replacement of
-% analytic scientific pipelines with learned surrogates that approximate the same output far
-% faster. Classical SOFI is a closed-form statistical estimator: it computes cumulants of the
-% pixel intensity traces and inverts the imaging model explicitly. 
-
-% The deep-learning models
-% studied in this thesis discard can reach better results 
-
-% that explicit computation and instead learn the mapping from a short
-% frame sequence to the SOFI image directly. The same pattern recurs across scientific
-% imaging, from learned reconstruction in MRI and cryo-EM to neural surrogates for physical
-% simulation. A recurring theme in this thesis reinforces the value of cross-domain transfer
-% in this trend: both fusion architectures originate in satellite multi-image
-% super-resolution and were carried, with relatively small adaptations, into fluorescence
-% microscopy. That a method developed for fusing satellite views of the Earth transfers to
-% fusing blinking fluorophores illustrates how architectural ideas in the field generalise
-% across problem domains that share an underlying structure, here, the fusion of many
-% low-information observations of a single static scene.
-
-% The most important risk that follows from this shift is hallucination. A classical SOFI
-% reconstruction can be noisy or low-resolution, but it cannot invent structure that the
-% cumulant statistics do not support. A learned model has no such guarantee. The results of
-% this thesis make the risk concrete: under slow-blinking, low-SNR conditions the MISRGRU
-% baseline reconstructs filaments that are absent from the ground truth
-% (Figure~\ref{fig:model_reconstruction_comparison}), and it does so confidently, with no
-% indication that the output is unreliable. For a biologist, a hallucinated microtubule is
-% not a cosmetic artefact; it can be mistaken for a genuine structure and drive a wrong
-% conclusion. This is precisely the regime, dim signal and sparse blinking, in which
-% super-resolution is most needed and least verifiable, because no independent ground truth is
-% available at acquisition time. The attention mechanism mitigates but does not eliminate the
-% problem: TR-MISR degrades more gracefully than the GRU, yet it too is ultimately
-% interpolating from learned priors. Any deployment of these models should therefore be paired
-% with uncertainty estimates or with a classical SOFI reconstruction computed in the
-% background as a sanity check, so that users can distinguish recovered structure from
-% fabricated detail.
-
-% These considerations matter to several stakeholders. For the biologists and microscopists
-% who would use such a tool, the benefit, super-resolved video at the camera frame rate, is
-% inseparable from a new validation burden: they must learn when to trust the reconstruction
-% and when to fall back on slower but trustworthy methods. For instrument vendors and software
-% developers, the streaming model's $11$\,ms-per-frame inference on a single commodity GPU
-% shows that real-time super-resolution is deployable without specialised hardware, lowering
-% the barrier to integrating these methods into existing microscope control software. For the
-% research group that produced the SOFI-MISRGRU predecessor, this thesis both validates the
-% recurrent-fusion approach and maps out where it breaks down (frame-count generalisation,
-% streaming throughput, motion), providing a foundation for subsequent work.
-
-% Finally, the applicability of these findings must be qualified honestly. All quantitative
-% results were obtained on synthetic data, where the ground-truth structure is known exactly
-% and the imaging conditions are controlled. This is a strength for reproducibility and for
-% isolating architectural effects, but it is also a limitation: real cameras, point-spread
-% functions, and biological samples will differ from the simulation in ways the models have
-% never seen. Until transfer to experimental data is demonstrated, the models should be
-% treated as a promising methodological contribution rather than a validated instrument, and
-% in particular should not be relied upon for diagnostic or clinical decisions. The
-% responsible path forward is incremental, with quantitative validation against classical SOFI
-% on real acquisitions before any structure recovered only by the network is treated as real.
-
 \section{Limitations and future directions}
 
 First, all quantitative results are obtained on a synthetic microtubule dataset
 generated with the simulation pipeline from~\cite{resurf2024}. Transfer to real
-experimental data is not addressed in this thesis, and the most immediate direction for
+experimental data is not addressed in this thesis. The most immediate direction for
 future work is to establish whether the models can reconstruct live-cell acquisitions.
 
 A one promising direction for adapting synthetically trained models to a specific
 microscope is to fine-tune the network on a sequence of blank background frames, 
 that capture only detector noise and autofluorescence. This way the model could 
-quickly adapt to noise levels \cite{noise2noise2018}. 
+quickly adapt to noise levels \cite{noise2noise2018}, and extract the signal easier. 
 
 Once the models prove capable of reconstructing live-cell data, whether through
 fine-tuning or out of the box, a natural next step is to pursue general-purpose
 super-resolution. Most current methods~\cite{qiao2025dpatisr,resurf2024} must be fine-tuned
-for the specific sample being imaged. We believe that deep-learning models could instead
+for the specific sample being imaged, or different PSF. We believe that deep-learning models could instead
 operate like SOFI, generalising across acquisitions without being retrained for a particular
 point-spread function or sample structure.
 
 A natural architectural extension is a streaming TRMISR. This thesis pairs a Streaming MISRGRU
 with a batch Transformer, but never a streaming Transformer, leaving one cell of the design
 space unexplored. Since attention degraded more gracefully than recurrence under the harder
-blinking and low-SNR conditions, a causal attention variant with a key-value cache that
+blinking and low-SNR conditions, an attention variant with a key-value cache that
 emits one output per frame could combine the reconstruction robustness of TRMISR with the
 throughput of the streaming GRU.
 
 The latency results reported here are obtained with PyTorch inference. Compiling the models
-with TensorRT and applying FP16 or INT8 quantisation is the obvious next step toward the
-real-time target.
+with TensorRT and applying FP16 or INT8 quantisation can half the inference times.
 
-A further important direction is to equip the models with uncertainty estimates. The most
-serious risk of replacing a closed-form estimator with a learned one is hallucination: under
-slow-blinking, low-SNR conditions the models reconstruct structure that the cumulant
-statistics do not support, and do so with no indication that the output is unreliable.
-Per-pixel uncertainty maps, model ensembles, or a classical SOFI reconstruction computed in
-the background as a sanity check would let users distinguish recovered structure from
-fabricated detail, which is essential before any structure seen only in the network output is
-treated as real.
+A further important direction is to equip the models with uncertainty estimates~\cite{qiao2025dpatisr}.
+The most serious risk of replacing SOFI with a trained model is hallucination: we ask the network
+to recover structure that SOFI itself does not resolve, yet in doing so the model may invent
+connections between microtubules that are absent from the ground truth. Per-pixel uncertainty maps
+could serve as a built-in sanity check, quantifying how confident the model is about each part of
+the reconstruction. Such confidence information is essential before any structure visible only in
+the network output is treated as real.
 
 Our motion augmentation also has a structural limitation: it applies a single global
 displacement to the entire field of view, translating the whole structure rather than its
@@ -216,9 +152,8 @@ individual parts. Real biological motion is rarely rigid. A model trained only o
 sequences may therefore generalise poorly to such local, non-rigid deformation. Although, the model 
 uses the local deformable convolution to limit this dependancy on global movement,
  but it was not tested in practice. 
-Extending the augmentation to per-region or non-rigid displacement fields, and pairing it with a DPA module
-that estimates spatially varying rather than global alignment, is a natural next step toward
-handling realistic intracellular dynamics.
+Future research can focus on extending the augmentation to per-region or non-rigid displacement fields, 
+and pairing it with a DPA module that estimates spatially varying alignment.
 
 Finally, training against higher-order SOFI targets could push the spatial resolution further.
 This would require simulating additional data and generating the corresponding higher-order

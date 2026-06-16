@@ -732,9 +732,22 @@ the decoder is invoked once per frame rather than a single time at the end.
 
 Both variants stay well under the $20$\,ms budget required for real-time reconstruction at
 $50$\,fps, making the streaming MISRGRU an efficient choice for reconstructing an entire
-acquisition continuously, frame by frame.
+acquisition continuously, frame by frame, without the need to restart the model. Since the
+DPA aligns the frames together we achieve temporal-resolution equal to camera acquisition rate.
 
+Decorrelation analysis results closely match the results of staticaly trained streaming MISRGRU
+model. Both models achieved better resolution at 100 accumulated frames 
+(Figure~\ref{fig:imdecor_comparison_longer_dpa}). 
 
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{figures/imdecor_comparison_longer_dpa.pdf}
+  \caption{ Decorrelation analysis of static DPA model at 20 and 100 frames reconstruction.
+   Each row corresponds to a different SNR (photons/frame): 100(high-SNR) or 40 (low-SNR), and
+    blinking conditions (on time/ off time in ms): 10/600 (fast) or 10/2400 (slow).
+    Lower resolution values indicate sharper super-resolved images.}
+  \label{fig:imdecor_comparison_longer_dpa}
+\end{figure}
 % This improvement arises not from a reduction in computation but from amortising the
 % processing cost over all 20 outputs: the convolutional GRU processes one frame at a time
 % in a fixed-cost forward pass, spreading the total 226\,ms across 20 SR reconstructions
