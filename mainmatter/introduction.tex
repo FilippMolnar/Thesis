@@ -10,6 +10,10 @@ The diffraction limit of light restricts spatial resolution to roughly
 200--300\,nm~\cite{born1999principles}, far larger than the nanometre-scale
 structures that govern cellular function. These structures are entirely hidden within the
 diffraction blur.
+Resolving these structures is important because their shape
+and arrangement determine how a cell works. To truly understand and combat complex threats
+like cancer, neurodegenerative disorders, and infections, we must observe how they operate
+inside living cells.
 % Fluorescent microscopy utilizes fluorescent molecules (fluorophores) that are attached
 % to imaged structure. Upon excitation with a laser blinking fluorophores are captured
 % in a sequence of images and reconstructed.
@@ -20,11 +24,19 @@ diffraction blur.
 Fluorescence microscopy addresses this challenge by labelling structures of 
 interest with fluorescent molecules (fluorophores). Upon excitation with a laser, 
 fluorophores emit light that can be detected and imaged. 
-Several super-resolution microscopy techniques have been developed to surpass 
-the diffraction limit and recover sub-diffraction information. 
-However, these methods typically involve significant trade-offs between 
-spatial resolution, acquisition speed, phototoxicity, hardware complexity, 
+Several super-resolution microscopy techniques have been developed to surpass
+the diffraction limit and recover sub-diffraction information.
+However, these methods typically involve significant trade-offs between
+spatial resolution, acquisition speed, phototoxicity, hardware complexity,
 and computational cost.
+These trade-offs are especially acute in live cells, where high excitation
+intensity and long exposures cause phototoxicity and photobleaching that damage 
+the studies sample. Live-cell imaging is therefore constrained to low
+excitation power and short exposure times, which limit the number of photons
+collected per frame. This
+low photon budget translates directly into a capturing images with 
+low signal-to-noise ratio (SNR).
+Any practical method must be able to resolve the structures at this regime.
 
 % Among these trade-offs, temporal resolution is often the first to be
 % sacrificed, yet it is precisely what live-cell imaging cannot do without.
@@ -79,10 +91,19 @@ The model demonstrated a
 400-fold latency reduction relative to conventional SOFI establishing the
 practical feasibility of real-time deep-learning SR microscopy.
 
-In this thesis we explore whether transformer-based fusion module (TR-MISR) \cite{TR-MISR-original}
-can match or surpass the SR quality of the SOFI-MISRGRU \cite{resurf2024} baseline on simulated
-fluorescence microscopy data across varying SNR conditions. On PROBA-V dataset TR-MISR achieved better results and 
-demonstrated robustness to noisy images a property the authors attribute to the attention mechanism.
+In this thesis we explore whether the transformer-based fusion module TR-MISR~\cite{TR-MISR-original}
+can match or surpass the SR quality of the SOFI-MISRGRU~\cite{resurf2024} baseline on simulated
+fluorescence microscopy data across varying SNR conditions.
+
+Like MISRGRU, TR-MISR was originally developed for the PROBA-V challenge~\cite{TR-MISR-original},
+a satellite multi-image super-resolution benchmark in which several low-resolution
+Earth-observation images of the same scene, captured at different revisit times, are fused into
+a single high-resolution image. 
+On this benchmark TR-MISR outperformed MISRGRU and proved more
+robust to noisy inputs, a property its authors attribute to the attention mechanism. Whether
+this advantage transfers to the fluorescence-microscopy setting, where the input is a temporal
+sequence of blinking frames rather than multiple satellite views, is an open question this thesis
+addresses.
 
 Secondly, we also extend SOFI-MISRGRU into a continuous-output streaming architecture 
 that eliminates the batch acquisition bottleneck entirely. With this design the model
@@ -126,7 +147,8 @@ In answering these questions, this thesis makes the following contributions:
     $2n{-}7$ upscaling, a corrected attention-score scaling, and a CrossAttentionAggregator
     that separates frame-to-frame communication from final feature aggregation
     (Chapter~\ref{ch:method}).
-  \item A systematic comparison of TR-MISR and SOFI-MISRGRU across twelve SNR conditions,
+  \item A systematic comparison of TR-MISR and SOFI-MISRGRU across various blinking and 
+  SNR conditions,
     showing that attention-based fusion holds its quality under low-SNR, slow-blinking
     acquisitions where the GRU degrades (Chapter~\ref{ch:results}).
   \item An analysis of the frame-count generalisation of both architectures, tracing
