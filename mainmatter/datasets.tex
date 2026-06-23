@@ -2,12 +2,22 @@
 \label{ch:datasets}
 
 This chapter describes the datasets used for training and evaluating the TRNet and MISRGRU architectures.
-All experiments use the same synthetic dataset that was created by Komen and Tekpinar, which was used 
-in the thesis~\cite{jelle2024} and subsequently in the RESURF paper~\cite{resurf2024}.
-No modifications were made to the simulation pipeline or to the raw simulated data.
 
-In this work we motion augmentated simulated data to train and evaluate the network capability on reconstructing motion.
-Section~\ref{sec:motion_augment} describes how motion augmentation was achieved.
+\paragraph{Origin of the simulated data.}
+No new simulations were generated for this thesis. All experiments reuse the
+existing synthetic dataset produced in the RESURF paper~\cite{resurf2024}.
+The data were generated with the publicly available SOFI simulation
+tool\footnote{\url{https://github.com/GrussmayerLab/Sofi_Simulations}} together
+with the SOFI package\footnote{\url{https://github.com/GrussmayerLab/sofipackage}};
+the simulation methodology is described in detail in~\cite{komen2024, resurf2024}.
+
+\paragraph{This work's contribution to the dataset.}
+\emph{Motion augmentation} of the static simulated sequences was introduced in this thesis 
+as a preprocessing step to train and
+evaluate the streaming model on its ability to reconstruct moving samples.
+The implementation is released as part of the
+project codebase.\footnote{Motion-augmentation code:
+\url{https://github.com/GrussmayerLab/SOFI-TR-MISR/blob/motion/src/motion_augment.py}.}
 
 \section{Synthetic Data }
 \label{sec:synthetic}
@@ -72,7 +82,7 @@ which is then used to evaluate the structural correlation with our super-resolve
 \label{sec:simulation_conditions}
 
 To build a dataset that generalises across different experimental conditions,
-simulations were run under 12 distinct signal-to-noise settings formed by the
+simulations were run under 12 distinct settings formed by the
 combination of three blinking-speed regimes and four photon-level fractions \cite{komen2024}:
 
 \begin{itemize}
@@ -82,56 +92,68 @@ combination of three blinking-speed regimes and four photon-level fractions \cit
         progressively reducing the peak signal intensity.
 \end{itemize}
 
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\textwidth]{figures/slow_fast_high_low_comparison.pdf}
+  \caption{Simulated frames illustrating the different imaging conditions.
+    Columns vary the photon level (100\% to 40\%), while rows correspond to
+    fast and slow blinking speeds.}
+  \label{fig:slow_fast_high_low}
+\end{figure}
 
-\subsection{Patch Sizes and SOFI Output Geometry}
-\label{sec:patch_sizes}
 
-Training patches are extracted as $64\times64$ LR pixels, with the corresponding HR
-SOFI target covering $121\times121$ pixels.
-The ratio $121/64 \approx 1.89$ is not an integer, which rules out standard integer-factor
-upsampling operations such as PixelShuffle and motivates the ConvTranspose2d decoder
-described in Section~\ref{sec:decoder}.
-The exact output size follows the formula:
+% \subsection{SOFI Output and Model Target}
+% \label{sec:patch_sizes}
 
-\begin{equation}
-  H_\text{out} = 2N - 7,
-  \label{eq:2n7}
-\end{equation}
+% S
 
-where $N$ is the LR patch width in pixels.
-For $N = 64$: $2 \times 64 - 7 = 121$ \checkmark.
+% Training patches are extracted as $64\times64$ LR pixels, with the corresponding HR
+% SOFI target covering $121\times121$ pixels.
+% The ratio $121/64 \approx 1.89$ is not an integer, which rules out standard integer-factor
+% upsampling operations such as PixelShuffle and motivates the ConvTranspose2d decoder
+% described in Section~\ref{sec:decoder}.
+% The exact output size follows the formula:
 
-The formula arises directly from how the SOFI cross-cumulant is computed~\cite{sofi2009,geissbuehler_2012_mapping}.
-Second-order cross-cumulants are evaluated by pairing pixels within a
-\emph{fixed 4-pixel neighbourhood} that spans offsets $\{-1,0,1,2\}$ along each axis
-(as defined in the reference SOFI implementation).
-Each pixel pair at positions $r_1$ and $r_2$ contributes a virtual pixel at their
-centroid $(r_1+r_2)/2$, creating a grid twice as dense as the detector array.
-However, the maximum inter-pixel distance of 3 pixels means the 3 outermost pixels
-on each side of the image cannot form valid cross-cumulant pairs; this restricts the valid
-interior to $s = N - 3$ pixels per dimension.%
-\footnote{Traced to \texttt{sofiCumulants.m} in the reference SOFI MATLAB toolbox:
-  \url{https://github.com/GrussmayerLab/sofipackage}.}
+% \begin{equation}
+%   H_\text{out} = 2N - 7,
+%   \label{eq:2n7}
+% \end{equation}
 
-Building the full interlaced virtual grid for 2nd-order SOFI yields a $2s \times 2s$
-array:
-\begin{equation}
-  2s \times 2s = 2(N-3) \times 2(N-3) = (2N-6)\times(2N-6).
-\end{equation}
-A final boundary crop of one pixel per side (inherent to the 2nd-order interlacing
-geometry) removes one more pixel from each dimension, giving:
-\begin{equation}
-  (2N - 6 - 1) \times (2N - 6 - 1) = (2N-7)\times(2N-7).
-\end{equation}
+% where $N$ is the LR patch width in pixels.
+% For $N = 64$: $2 \times 64 - 7 = 121$ \checkmark.
 
-The $-7$ decomposes as $-2\times3 - 1$: the factor of 6 comes from the
-3-pixel boundary loss doubled by the 2× grid, and the extra $-1$ from the final
-interlacing crop.
-This non-integer upscaling ratio is an inherent consequence of the SOFI
-cross-cumulant geometry and cannot be avoided by changing the network design.
+% The formula arises directly from how the SOFI cross-cumulant is computed~\cite{sofi2009,geissbuehler_2012_mapping}.
+% Second-order cross-cumulants are evaluated by pairing pixels within a
+% \emph{fixed 4-pixel neighbourhood} that spans offsets $\{-1,0,1,2\}$ along each axis
+% (as defined in the reference SOFI implementation).
+% Each pixel pair at positions $r_1$ and $r_2$ contributes a virtual pixel at their
+% centroid $(r_1+r_2)/2$, creating a grid twice as dense as the detector array.
+% However, the maximum inter-pixel distance of 3 pixels means the 3 outermost pixels
+% on each side of the image cannot form valid cross-cumulant pairs; this restricts the valid
+% interior to $s = N - 3$ pixels per dimension.%
+% \footnote{Traced to \texttt{sofiCumulants.m} in the reference SOFI MATLAB toolbox:
+%   \url{https://github.com/GrussmayerLab/sofipackage}.}
+
+% Building the full interlaced virtual grid for 2nd-order SOFI yields a $2s \times 2s$
+% array:
+% \begin{equation}
+%   2s \times 2s = 2(N-3) \times 2(N-3) = (2N-6)\times(2N-6).
+% \end{equation}
+% A final boundary crop of one pixel per side (inherent to the 2nd-order interlacing
+% geometry) removes one more pixel from each dimension, giving:
+% \begin{equation}
+%   (2N - 6 - 1) \times (2N - 6 - 1) = (2N-7)\times(2N-7).
+% \end{equation}
+
+% The $-7$ decomposes as $-2\times3 - 1$: the factor of 6 comes from the
+% 3-pixel boundary loss doubled by the 2× grid, and the extra $-1$ from the final
+% interlacing crop.
+% This non-integer upscaling ratio is an inherent consequence of the SOFI
+% cross-cumulant geometry and cannot be avoided by changing the network design.
 
 \section{Motion Augmentation}
 \label{sec:motion_augment}
+
 
 The synthetic dataset described above contains no sample motion: every frame in a
 sequence depicts the same field of view, with fluorophores at fixed coordinates
@@ -142,8 +164,7 @@ The streaming MISRGRU (Section~\ref{sec:streaming_arch}), however, is designed t
 produce a super-resolved image at \emph{every} time step, making it directly
 relevant to live-cell imaging where sample motion is common and unavoidable.
 In practice, organelles such as vesicles and mitochondria translate across the
-field of view at 0.5--5\,\textmu m/s~\cite{tang2013fast}, and global stage drift
-adds further displacement on the order of tens of nanometres per second.
+field of view at 0.5--5\,\textmu m/s~\cite{tang2013fast}.
 A model trained exclusively on static data has no incentive to track these
 movements: since the correct answer is always the same single HR reconstruction,
 the network can ignore temporal position entirely.
@@ -157,9 +178,16 @@ Motion augmentation converts each static training sample into a drifting sequenc
 by shifting both the LR frames and the corresponding HR target frame-by-frame
 along a synthetic trajectory, forcing the streaming model to predict the HR image
 at the current field position.
-An earlier approach considered perturbing microtubule segment angles frame-by-frame
-using an Ornstein-Uhlenbeck process; this was abandoned owing to the complexity
-of re-running the full simulation pipeline for each trajectory.
+The implementation is released as part of the
+project codebase.\footnote{Motion-augmentation code:
+\url{https://github.com/GrussmayerLab/SOFI-TR-MISR/blob/motion/src/motion_augment.py}.}
+
+An earlier approach was perturbing microtubule segment angles frame-by-frame
+inside the simulation software~\footnote{\url{https://github.com/GrussmayerLab/Sofi_Simulations}}
+using an Ornstein--Uhlenbeck process. This would have required refactoring and
+re-running the full SOFI simulation pipeline for every trajectory, and was quickly
+abandoned for that reason; the motion augmentation described here instead operates
+purely on the already-simulated frames.
 
 \subsection{Sinusoidal Drift Trajectory}
 \label{sec:trajectory_gen}

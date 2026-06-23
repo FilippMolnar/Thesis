@@ -2,6 +2,14 @@
 \chapter{Background}
 \label{ch:background}
 
+This chapter provides the technical foundation needed to follow the rest of the thesis.
+It moves from the physics of the imaging problem to the algorithms that this work seeks to
+accelerate. We begin with fluorescence microscopy and the diffraction limit that motivates
+super-resolution, then introduce super-resolution techniques and difficulties when implementing 
+them for live-cell imaging.
+We then cover the deep-learning building blocks used later, and close by describing the two
+reference architectures this thesis builds on and compares, MISRGRU and TRMISR.
+
 \section{Fluorescence Microscopy}
 \label{sec:fluorescence}
 
@@ -18,13 +26,16 @@ enabling live-cell imaging of subcellular dynamics.
 \subsection{Diffraction Limit}
 \label{subsec:diffraction}
 
+
+
 The spatial resolution of any far-field optical microscope is fundamentally bounded 
 by the wave nature of light. 
 When a point source of light passes through a circular aperture (the objective lens), 
 it produces an \emph{Airy disk} diffraction pattern rather than a perfect point image. 
-Lord Rayleigh formalised this as a resolution criterion: two point sources can just be resolved when the 
-principal maximum of one pattern coincides with the first minimum of the other~\cite{born1999principles}. 
-In the lateral plane this gives the minimum resolvable distance:
+Lord Rayleigh formalised this as a resolution criterion: two point sources can just be resolved when the
+principal maximum of one pattern coincides with the first minimum of the other~\cite{born1999principles}
+(Figure~\ref{fig:rayleigh}).
+This gives the minimum resolvable distance:
 \begin{equation}
     d_{xy} = 0.61\,\frac{\lambda}{\mathrm{NA}},
     \label{eq:rayleigh}
@@ -33,6 +44,14 @@ where $\lambda$ is the emission wavelength and $\mathrm{NA} = n\sin\theta$ is th
 numerical aperture of the objective, determined by the refractive index $n$ of the 
 immersion medium and the half-angle $\theta$ of the light cone collected by the lens. 
 For typical visible-light fluorescence ($\lambda \approx 500$--$700\,\mathrm{nm}$, $\mathrm{NA} \approx 1.4$), this yields $d_{xy} \approx 200$--$300\,\mathrm{nm}$.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.7\linewidth]{figures/rayc.png}
+  \caption{The Rayleigh criterion. Two point sources are just resolved when the principal
+    maximum of one Airy pattern coincides with the first minimum of the other.}
+  \label{fig:rayleigh}
+\end{figure}
 
 Many biologically relevant structures are far smaller than this limit. Microtubules
 ($\approx$18\,nm) and mitochondrial membranes ($\approx$10\,nm)~\cite{beese1987microtubule,shami_2021_threedimensional}
@@ -45,7 +64,7 @@ visualising subcellular processes.
 The \emph{Point Spread Function} (PSF) $v(r)$ describes how a microscope blurs a single point
 emitter into a diffraction-limited spot. In the focal plane it approximates an Airy disk, which is
 commonly modelled as a Gaussian $v(r) \propto \exp(-r^2/2\sigma^2)$~\cite{jelle2024}.
-The observed image is a superposition of shifted, scaled PSFs from every emitter:
+The observed image is a combination of shifted, scaled PSFs from every emitter:
 \begin{equation}
     y(r,t) = \sum_k v(r - r_k)\,\epsilon_k\,s_k(t) + n(r,t),
     \label{eq:psf_conv}
@@ -147,12 +166,37 @@ taken are required when calculating higher-order SOFI.
 This is challenging in practice when sample being exposed to laser for longer is bleached and 
 resulting  image has low signal-to-noise ratio. 
 
-Even SOFI that can typically achieve temporal resolution on the order of seconds to minutes, 
-since low laser power is needed to avoid photobleaching during prolonged imaging. 
+SOFI can typically achieve temporal resolution on the order of seconds. 
 Reconstruction is generally performed offline after acquisition, 
 and even with GPU acceleration the computational latency remains on the
-order of seconds per frame. This makes none of these methods suitable for real-time,
+order of seconds per frame, making SOFI not suitable for real-time,
 long-duration live-cell imaging. \cite{resurf2024}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\linewidth]{figures/sofi-smlm.png}
+  \caption{Comparison of single-molecule localisation (A) and SOFI (B) on a stack of
+    diffraction-limited frames. Localisation methods pinpoint the centre of each isolated emitter
+    across frames and accumulate the positions into a super-resolved image, requiring sparse,
+    well-separated blinking. SOFI instead exploits the temporal correlations of the intensity
+    time-traces (C): because signals from distinct emitters are statistically independent, their
+    cross-correlation averages to zero, while higher-order cumulants of co-located pixels narrow
+    the effective PSF. This recovers the underlying structure even under dense, overlapping
+    emission where localisation fails.}
+  \label{fig:sofi_smlm}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{figures/sofi-crosscumulant.png}
+  \caption{SOFI algorithm: cross-cumulant calculation. The $n^{\text{th}}$-order cross-cumulant
+    $\kappa_n$ of a pixel $\delta$ is computed as a weighted sum over all partitions of a set $G$
+    of $n$ pixels. The position of pixel $\delta$ is taken as the geometric mean of the $n$ pixels
+    within $G$. Choosing different sets of $n$ pixels allows the $n^{\text{th}}$-order cross-cumulant
+    to be evaluated on an arbitrarily large pixel grid. Formulas are given for general $n$, with
+    sketches for $n = 4$.}
+  \label{fig:sofi_crosscumulant}
+\end{figure}
 
 Table~\ref{tab:sr_techniques} summarises the main families of non deep learning super resolution techniques.
 
@@ -165,10 +209,10 @@ Table~\ref{tab:sr_techniques} summarises the main families of non deep learning 
 \hline
 \textbf{Technique} & \textbf{Resolution} & \textbf{Frames} & \textbf{Hardware} \\
 \hline
-STED~\cite{sted1994}       & $<\!50\,\mathrm{nm}$      & Single          & Depletion laser   \\[2pt]
+STED~\cite{sted1994}       & $<\!50\,\mathrm{nm}$      & Single          & Depletion laser + patterned illum.   \\[2pt]
 SIM~\cite{sim2000}         & $\approx120\,\mathrm{nm}$ & 9--15           & Patterned illum.  \\[2pt]
-PALM/STORM~\cite{rust_2006_subdiffractionlimit,betzig_2006_imaging} & 10--20\,nm   & $10^5$--$10^6$  & Widefield         \\[2pt]
-SOFI~\cite{sofi2009}       & $\approx\!\sqrt{n}$-fold  & 100--1000        & Widefield         \\[2pt]
+SMLM~\cite{rust_2006_subdiffractionlimit,betzig_2006_imaging} & 10--20\,nm   & $10^5$--$10^6$  & Widefield         \\[2pt]
+SOFI~\cite{sofi2009}       & $\approx\!{n}$-fold with postprocessing  & 100--2000        & Widefield         \\[2pt]
 \hline
 \end{tabular}
 \end{table}
@@ -176,6 +220,29 @@ SOFI~\cite{sofi2009}       & $\approx\!\sqrt{n}$-fold  & 100--1000        & Wide
 \subsection{Super-Resolution with Deep Learning}
 Deep learning approaches for image super-resolution replace explicit mathematical models 
 with learnable functions that are trained to map low-resolution frames to high-resolution target. 
+
+\section{Problem Formulation}
+\label{sec:problem}
+%% Multi-image SR for SOFI:
+%% \hat{Y} = f^γ_{θ,α,β}({l_1, ..., l_N})
+%% Inputs: N LR fluorescence frames l_i ∈ R^{1×H×W}
+%% Output: 2nd-order SR image \hat{Y} ∈ R^{1×γH×γW}, γ ≈ 1.984
+%% Key challenge: γ is non-integer (2n-7 for n=2 SOFI) → not a power-of-2 upscale
+We define two problem settings: the first is the multi-image super-resolution (MISR) task, which goal is to 
+produce a single high-resolution image from a sequence of low-resolution frames defined as $\{\mathbf{l}_1, \mathbf{l}_2, \ldots, \mathbf{l}_N\}$. 
+The second is video super-resolution (VSR), which extends the first by producing a super-resolved image for 
+every frame in the movie, effectively reconstructing a super-resolved video. The high-resolution output is 
+defined as $\mathbf{Y}_t \in \mathbb{R}^{C \times \gamma H \times \gamma W}$ for each time step $t$, and produced from the sequence of low-resolution frames up 
+to that time step, $\{\mathbf{l}_1, \mathbf{l}_2, \ldots, \mathbf{l}_t\} \in \mathbb{R}^{C \times H \times W}$, 
+where $C$ is the number of channels (in our case 1 as the images are grayscale), W and H are the width and height dimensions of 
+low-resolution frames and $\gamma$ is the upscaling factor.
+
+For second-order SOFI, the high-resolved target has spatial dimensions of $(2H - 7) \times (2W - 7)$. This is
+due to the nature of SOFI reconstruction algorithm. Specifically, second-order cross-cumulants are computed by
+pairing pixels within a fixed neighbourhood, with each pair contributing a virtual pixel at its centroid to form a
+grid twice as dense as the detector array; the limited pairing range means the outermost pixels cannot form valid
+pairs, which trims the doubled grid and yields the $-7$ offset. Thus our models need to be designed to produce an output
+of this specific size, which is not a standard 2 times upscale.
 
 \subsubsection{RESURF}
 Tekpinar et al.~\cite{resurf2024} proposed the multi-image super-resolution gated recurrent unit
@@ -193,8 +260,8 @@ With as few as 8 frames the model achieves image quality comparable to second-or
 at an inference latency of approximately 27\,ms per reconstruction --- a roughly 400-fold
 acceleration over the classical algorithm~\cite{resurf2024}.
 Quality is quantified using decorrelation analysis for resolution estimation, and the re-scaled
-Pearson correlation (RSP) for structural fidelity, mirroring the evaluation protocol of the
-original SOFI literature.
+Pearson correlation (RSP) for structural fidelity, commonly used as quality metrics in super-resolution 
+microscopy.
 The primary limitation of MISRGRU is its sequential fusion stage: because each ConvGRU step
 depends on the previous hidden state, the fusion cannot be parallelised, and inference time
 scales linearly with the number of input frames.
@@ -221,6 +288,26 @@ upscaling factor.
 The full architectural description and comparison with MISRGRU are given in
 Section~\ref{sssec:trmisr_bg}.
 
+\subsubsection{SFSRM: Single-frame deep-learning super-resolution microscopy for intracellular dynamics imaging}
+Chen et al.~\cite{chen2023sfsrm} proposed single-frame super-resolution microscopy (SFSRM),
+which takes the opposite approach to fluctuation-based methods: rather than fusing many frames,
+it reconstructs a super-resolved image from a \emph{single} diffraction-limited frame.
+The model builds on an enhanced super-resolution generative adversarial network (ESRGAN),
+guided by two additions tailored to microscopy data.
+First, a subpixel edge map is extracted from the input frame and fed to the network as prior
+information.
+Second, a multi-component loss combining a multi-scale structural-similarity term with perceptual,
+adversarial, and frequency-domain losses is used to recover high-frequency detail while suppressing
+the artefacts that adversarial training can introduce.
+With these elements SFSRM achieves spatiotemporal resolutions of 30\,nm at 10\,ms,
+enabling prolonged live-cell imaging of dynamics such as vesicle transport along microtubules
+and endosome fusion and fission.
+However, the method has a prerequisite input signal-to-noise ratio (SNR) of about~15, so under the
+low-SNR conditions typical of high-speed live-cell imaging it requires a separate signal-enhancement
+network (a second ESRGAN, denoted SEN) to denoise the frame before reconstruction.
+This added denoising stage, together with the large size of the adversarial generator, has been
+reported to result in a computational latency on the order of hundreds of milliseconds in inference
+time, preventing real-time application~\cite{resurf2024}.
 
 \subsubsection{DPA-TISR: Deformable Phase-space Alignment for Time-Lapse SR}
 
@@ -369,6 +456,17 @@ Using $\operatorname{MSA}(\cdot)$ to denote multi-head self-attention, the full 
 
 \subsection{Multi-Frame Super-Resolution Architectures}
 \label{subsec:mfsr_archs}
+The choice of a multi-frame architecture follows directly from the nature of the SOFI task.
+The point spread function is identical at every time step, so a
+single frame carries no super-resolution information. It is simply a diffraction-limited image.
+The resolution gain that SOFI exploits lives entirely in the temporal statistics of fluorophore
+blinking. 
+A network that processes frames jointly can learn to recover the same statistical information
+that the classical SOFI algorithm computes explicitly. 
+This is why both reference architectures fuse a sequence of $N$ frames, and it reframes the
+central design question as how those frames should be fused, the contrast between sequential
+recurrent fusion and parallel attention-based fusion explored in this thesis.
+
 The contributions in Chapter~\ref{ch:method} build directly on two existing multi-frame SR architectures.
 We describe the original models here so the reader can see what is newly implemented in this thesis.
 
