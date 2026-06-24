@@ -12,24 +12,27 @@ ConvGRU fusion is, however, inherently sequential and aggregates frames through 
 unnormalised summation that does not generalise beyond the training frame count.
 
 This thesis investigates whether a Transformer that fuses all frames in parallel through
-self-attention (TRMISR) can improve upon recurrent fusion in super-resolution quality 
-across various signal-to-noise and blinking conditions, and at what inference-latency cost.
-Secondly, we modify the SOFI-MISRGRU into a streaming architecture that 
-emits one super-resolved image per incoming frame. 
-Both models are adapted to the non-integer $2n{-}7$ SOFI upscaling and evaluated on a
-synthetic microtubule dataset spanning twelve blinking and signal-to-noise conditions.
-The models are using the resolution-scaled Pearson correlation and 
-decorrelation analysis to match the RESURF evaluation.
+self-attention (TR-MISR) can improve upon this recurrent fusion in the structural 
+fidelity, 
+the number of frames the model can
+exploit, and the inference latency per output image. Quality is quantified with the
+resolution-scaled Pearson correlation (RSP) and a decorrelation-based resolution estimate,
+matching the RESURF evaluation, on a synthetic microtubule dataset spanning twelve blinking
+and signal-to-noise conditions. 
+
+Secondly, we modify SOFI-MISRGRU into a streaming
+architecture that emits one super-resolved image per incoming frame. Which improved per output latency
+as well as allowed the model to accumulate more frames improving reconstruction fidelity.
 
 TR-MISR matches the 20-frame MISRGRU baseline while holding its quality under low SNR,
 slow-blinking acquisitions where MISRGRU degrades and hallucinates some filaments.
-Because cross-attention normalises over the input tokens, an eight-frame-trained TRMISR can
-be evaluated on longer sequences without retraining, a property the GRU lacks. Our modified 
-streaming MISRGRU architecture, reaches the batch baseline by the twentieth accumulated frame 
-and keeps improving. Model augmented with a deformable phase-space alignment module, and trained using motion augmentation
-pipeline that simulates moving structures further
-sustains reconstruction quality under inter-frame sample motion up to speeds of 5 $\mu$m per second.
+Because cross-attention normalises over the input tokens, an eight-frame-trained TR-MISR can
+be evaluated on longer sequences without retraining, a property the GRU lacks. Our modified
+streaming MISRGRU reaches the batch baseline by the twentieth accumulated frame
+and keeps improving. Augmenting this model with a deformable phase-space alignment module and
+training it with a motion-augmentation pipeline that simulates moving structures further
+sustains reconstruction quality under inter-frame sample motion up to speeds of 5\,\textmu m per second.
 By emitting one image per incoming frame instead of reprocessing the whole window, the
-streaming model cuts the per-output latency from 170\,ms to 17\,ms, a $10\times$ speed-up over
-the original RESURF work.
+streaming model with a deformable phase-space alignment cuts the per-output latency 
+from 170\,ms to 17\,ms, a $10\times$ speed-up over the original RESURF work.
 Together these results bring deep-learning super-resolution microscopy closer to real-time use.

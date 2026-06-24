@@ -4,8 +4,8 @@
 The living cell is in constant motion.
 Proteins diffuse, assemble, and disassemble; organelles reshape and migrate;
 signalling cascades propagate on timescales of seconds to minutes.
-Capturing these dynamic processes demand simultaneous high spatial and temporal
-resolution, a combination that conventional optical microscopy cannot simultaneously provide.
+Capturing these dynamic processes demands simultaneous high spatial and temporal
+resolution, a combination that conventional optical microscopy cannot provide.
 The diffraction limit of light restricts spatial resolution to roughly
 200--300\,nm~\cite{born1999principles}, far larger than the nanometre-scale
 structures that govern cellular function. These structures are entirely hidden within the
@@ -30,11 +30,11 @@ However, these methods typically involve significant trade-offs between
 spatial resolution, acquisition speed, phototoxicity, hardware complexity,
 and computational cost.
 These trade-offs are especially acute in live cells, where high excitation
-intensity and long exposures cause phototoxicity and photobleaching that damage 
-the studies sample. Live-cell imaging is therefore constrained to low
+intensity and long exposures cause phototoxicity and photobleaching that damage
+the studied sample. Live-cell imaging is therefore constrained to low
 excitation power and short exposure times, which limit the number of photons
 collected per frame. This
-low photon budget translates directly into a capturing images with 
+low photon budget translates directly into images with
 low signal-to-noise ratio (SNR).
 Any practical method must be able to resolve the structures at this regime.
 
@@ -107,7 +107,7 @@ addresses.
 
 Secondly, we also extend SOFI-MISRGRU into a continuous-output streaming architecture 
 that eliminates the batch acquisition bottleneck entirely. With this design the model
-can combine more input images which enchances the reconstruction quality while 
+can combine more input images, which enhances the reconstruction quality while
 enabling uninterrupted super-resolution video generation from dynamic samples in real-time.
 
 
@@ -143,22 +143,26 @@ In answering these questions, this thesis makes the following contributions:
 
 \begin{enumerate}
   \item Adaptation of the TR-MISR transformer fusion module to second-order SOFI
-    super-resolution, including a single-channel encoder, a decoder for the non-integer
-    $2n{-}7$ upscaling, a corrected attention-score scaling, and a CrossAttentionAggregator
-    that separates frame-to-frame communication from final feature aggregation
+    super-resolution, including a single-channel encoder, a decoder matched to the fractional
+    SOFI output size, and a CrossAttentionAggregator that separates frame-to-frame
+    communication from final feature aggregation. We also correct the attention-score scaling
+    of the original TR-MISR; this fix is required for the multi-head configurations used in
+    our size ablation, but has no effect on the single-head (1h1d) model we ultimately deploy
     (Chapter~\ref{ch:method}).
-  \item A systematic comparison of TR-MISR and SOFI-MISRGRU across various blinking and 
-  SNR conditions,
-    showing that attention-based fusion holds its quality under low-SNR, slow-blinking
-    acquisitions where the GRU degrades (Chapter~\ref{ch:results}).
+  \item A systematic comparison of TR-MISR and SOFI-MISRGRU across various blinking and
+    SNR conditions, showing that attention-based fusion holds its quality under low-SNR,
+    slow-blinking acquisitions where the GRU degrades, but does \emph{not} reduce inference
+    latency over the RESURF~\cite{resurf2024} baseline (Chapter~\ref{ch:results}).
   \item An analysis of the frame-count generalisation of both architectures, tracing
     MISRGRU's degradation to its unnormalised aggregation and showing that TR-MISR trained on
     eight frames can be evaluated on longer sequences without retraining.
-  \item A streaming SOFI-MISRGRU that produces one super-resolved output per input frame,
-    reaching the batch baseline and improving with more accumulated frames. 
-  \item A motion-robust extension of the streaming model, combining motion-augmented training with 
+  \item A streaming SOFI-MISRGRU that emits one super-resolved output per input frame,
+    reaching the reconstruction quality of batch baseline and improving with more accumulated
+    frames while cutting the per-output latency to RESURF~\cite{resurf2024} baseline by 10 times.
+    This is the main low-latency contribution of the thesis.
+  \item A motion-robust extension of the streaming model, combining motion-augmented training with
     a Deformable Phase-space Alignment module that sustains reconstruction quality under
-    inter-frame sample drift.
+    inter-frame sample drift. 
 \end{enumerate}
 
 \section{Thesis Outline}

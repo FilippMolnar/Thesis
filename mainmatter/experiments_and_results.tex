@@ -22,7 +22,7 @@ ablation in Appendix~\ref{app:trnet_modifications}.
 
 \subsubsection{Model Training Details}
 For the following TR-MISR experiments the architecture with a PixelShuffle decoder was used
-with a and a lightweight fusion module (1 attention head and depth of 1 - 1h1d), 
+with a lightweight fusion module (1 attention head and depth of 1 -- 1h1d),
 trained on 8 and 20 input frames for 100 epochs.
 Models are optimised with Adam using a learning rate of $10^{-3}$ for the encoder/decoder
 and $5 \times 10^{-4}$ for the transformer, reduced on validation-loss plateau.
@@ -125,14 +125,17 @@ baseline, whereas MISRGRU 8f falls more sharply.
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=1.0\linewidth]{figures/snr_conditions_no_pos_8v20v30v40vmisrgru.png}
-  \caption{Comparison of TR-MISR model trained on 8 frames and evaluated on 40, 30, 20, 8 
-  frames alongside foundational MISRGRU on 20 frames}
+  \caption{Comparison of the TR-MISR model trained on 8 frames and evaluated on 40, 30, 20, and 8
+  frames, alongside the foundational MISRGRU on 20 frames, broken down per SNR condition.
+  \textbf{Take-away:} feeding more frames helps TR-MISR most in the hard slow-blinking,
+  low-SNR conditions (right-hand groups), where it holds its quality while the MISRGRU
+  baseline drops off.}
   \label{fig:n_frame_fusion}
 \end{figure}
 
-Improvement of TR-MISR over MISRGRU is more pronounced at Slow and low SNR imaging as show both by RSP metric
-but also with visual inspection in 
-bottom row of figure~\ref{fig:model_reconstruction_comparison}. We observed that MISRGRU halucinates more often in 
+The improvement of TR-MISR over MISRGRU is more pronounced in slow and low-SNR imaging, as shown both by the RSP metric
+and by visual inspection in the
+bottom row of Figure~\ref{fig:model_reconstruction_comparison}. We observed that MISRGRU hallucinates more often in
 slow blinking and low SNR conditions whereas transformer model reconstructs
 dim microtubules much closer to actual ground truth image. 
 
@@ -194,13 +197,16 @@ Figure~\ref{fig:boxplot_rsp_20fvs8f} shows the RSP distributions for both models
   \includegraphics[width=1.0\linewidth]{figures/snr_conditions_no_pos_8v20.png}
   \caption{Comparison of TR-MISR model trained on 8 frames and versus TRNet trained on 20 frames,
   both are evaluated with 20 input frames, alongside foundational MISRGRU on 20 frames.
-  All models are evaluated across different SNR and blinking conditions.}
+  All models are evaluated across different SNR and blinking conditions.
+  \textbf{Take-away:} the 8-frame-trained model is at least as good as the 20-frame-trained
+  one at every condition, so training on a short sequence costs no quality while being
+  cheaper to train.}
   \label{fig:boxplot_rsp_20fvs8f}
 \end{figure}
 
 Counterintuitively, the 8-frame trained model outperforms the 20-frame trained model when
 both are evaluated on 20.
-We belive that 8 frames is already sufficient to capture enough information produced by
+We believe that 8 frames is already sufficient to capture enough information produced by
 fluorophore blinking: at the simulated acquisition rates and blinking speeds, in 80ms time fluorophores
 that were on will have switched state to dark state least once within 8 frames, so the cross-attention
 module receives a diverse sample of blink events and can learn to aggregate efficiently.
@@ -241,8 +247,11 @@ making it the preferred configuration given its substantially lower inference la
   \centering
   \includegraphics[width=0.8\linewidth]{figures/transformer_size_ablation_rsp.png}
   \caption{Resolution-scaled Pearson correlation for four Transformer configurations with 
-  varying depth and attention heads across SNR conditions. Baseline MISRGRUs (pre-trained 8 and 20 frames) 
-  are shown as for reference.}
+  varying depth and attention heads across SNR conditions. Baseline MISRGRUs (pre-trained 8 and 20 frames)
+  are shown for reference.
+  \textbf{Take-away:} RSP is essentially flat across the four transformer sizes, so the
+  smallest (1h1d) fusion module is preferred since larger ones add latency without improving
+  quality substantially.}
   \label{fig:transformer_sizes}
 \end{figure}
 
@@ -339,7 +348,11 @@ which normalizes the input in the decoder to produce consistent results.
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=1.0\linewidth]{figures/kbuf_K20_conditions_vs_frames.png}
-  \caption{Degrading output quality of K-buffer MISRGRU modification, across different SNR and blinking conditions.}
+  \caption{Output quality (RSP) of the sliding-window (K-buffer) MISRGRU modification as the
+  number of input frames increases, across different SNR and blinking conditions.
+  \textbf{Take-away:} quality peaks near the 20-frame training window and then degrades as
+  more frames are added, exposing the unnormalised GAP summation as unsuitable for
+  continuous, many-frame streaming.}
   \label{fig:kbuf_degradation}
 \end{figure}
 
@@ -397,7 +410,7 @@ Streaming models are evaluated by feeding frames one at a time from the test set
 RSP between the SR output at 20 and 100 accumulated frames compared 
 to the Ground Truth image for 4 different imaging conditions (photons/frame): 100(high-SNR) or 40 (low-SNR), and
 and blinking conditions (on time/ off time in ms): 10/600 (fast) or 10/2400 (slow). The main benefit we want to test
-in this experiment is whether the model can achive better reconstruction results with more accumulated images. 
+in this experiment is whether the model can achieve better reconstruction results with more accumulated images.
 
 Experiments with ablations and hyperparameter tunings are described in 
 appendix~\ref{app:streaming_misrgru_ablations}. The final best performing model is evaluated in this
@@ -448,7 +461,10 @@ to outputs reconstructed from 20 frames.
 and blinking conditions (on time/ off time in ms): 10/600 (fast) or 10/2400 (slow). 
 Corresponded resolution estimations and RSP scores of the models for different conditions. 
 RSP analysis is compared with reference ground-truth (GT), a FH: Fast high SNR, FL: Fast low SNR,
-SH: Slow high SNR, SL: Slow low SNR}
+SH: Slow high SNR, SL: Slow low SNR.
+  \textbf{Take-away:} the streaming model matches the batch baseline already at 20 frames and
+  keeps improving with more accumulated frames, with the largest gains in the harder
+  slow-blinking, low-SNR conditions.}
   \label{fig:lln35_vs_foundational_misrgru}
 \end{figure}
 
@@ -473,14 +489,21 @@ SH: Slow high SNR, SL: Slow low SNR}
   baseline models (left) vs.\ our
            models (right). Each row corresponds to a different SNR (photons/frame): 100(high-SNR) or 40 (low-SNR), and
             blinking conditions (on time/ off time in ms): 10/600 (fast) or 10/2400 (slow).
-           Lower resolution values indicate sharper super-resolved images.}
+           Lower resolution values indicate sharper super-resolved images.
+           \textbf{Take-away:} unlike RSP, the decorrelation-estimated resolution improves
+           only marginally when more frames are accumulated, indicating that added frames
+           mostly refine structural fidelity rather than the achievable resolution.}
   \label{fig:imdecor_comparison}
 \end{figure}
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=1.0\linewidth]{figures/streaming_visual.pdf}
-  \caption{Qualitative comparison of models and SOFI}
+  \caption{Qualitative comparison of the streaming MISRGRU, the batch MISRGRU, TR-MISR, and
+  100-frame SOFI against the ground truth across the four corner SNR conditions.
+  \textbf{Take-away:} accumulating more frames lets the streaming model recover dim, slow-blinking
+  filaments that the 20-frame batch model leaves blurred or missing, matching the quantitative
+  RSP gains in Figure~\ref{fig:lln35_vs_foundational_misrgru}.}
   \label{fig:Qualitative_comparison}
 \end{figure}
 
@@ -664,12 +687,12 @@ $11.29$\,ms and the DPA variant in $17.46$\,ms. Processing the full 20-frame seq
 nonetheless slower than the batch model ($226$\,ms and $349$\,ms versus $170$\,ms), because
 the decoder is invoked once per frame rather than a single time at the end.
 
-Both variants stay well under the $20$\,ms budget required for real-time reconstruction at
-$50$\,fps, making the streaming MISRGRU an efficient choice for reconstructing an entire
+Both variants stay well under the $25$\,ms budget required for real-time reconstruction at
+$40$\,fps, making the streaming MISRGRU an efficient choice for reconstructing an entire
 acquisition continuously, frame by frame, without the need to restart the model. Since the
 DPA aligns the frames together we achieve temporal-resolution equal to camera acquisition rate.
 
-Decorrelation analysis results closely match the results of staticaly trained streaming MISRGRU
+Decorrelation analysis results closely match the results of statically trained streaming MISRGRU
 model. Both models achieved better resolution at 100 accumulated frames 
 (Figure~\ref{fig:imdecor_comparison_longer_dpa}). 
 
@@ -679,7 +702,10 @@ model. Both models achieved better resolution at 100 accumulated frames
   \caption{ Decorrelation analysis of static DPA model at 20 and 100 frames reconstruction.
    Each row corresponds to a different SNR (photons/frame): 100(high-SNR) or 40 (low-SNR), and
     blinking conditions (on time/ off time in ms): 10/600 (fast) or 10/2400 (slow).
-    Lower resolution values indicate sharper super-resolved images.}
+    Lower resolution values indicate sharper super-resolved images.
+    \textbf{Take-away:} the motion-trained DPA model reaches the same resolution as the
+    static streaming model, so adding motion robustness into training does not cost spatial resolution on
+    static samples.}
   \label{fig:imdecor_comparison_longer_dpa}
 \end{figure}
 % This improvement arises not from a reduction in computation but from amortising the

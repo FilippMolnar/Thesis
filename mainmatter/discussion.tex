@@ -2,8 +2,8 @@
 \chapter{Discussion}                                                                   
 \label{ch:discussion}                                                                  
                  
-Having real-time feedback of reconstruction matter a lot for live-cell imaging because 
-it could allow biologists to observe the live sample as it interacts with the world and interve 
+Having real-time feedback of the reconstruction matters a lot for live-cell imaging because
+it allows biologists to observe the live sample as it interacts with the world and intervene
 if something goes wrong.
 In a post-processing workflow the
 low-resolution frames are collected and reconstructed only afterwards, so failures such as
@@ -20,7 +20,7 @@ The main motivation of this work was to test whether replacing the sequential
 ConvGRU fusion in MISRGRU~\cite{resurf2024} with a Transformer's parallel
 self-attention would yield a meaningful improvement in either reconstruction quality 
 or inference speed:
-In aggregate resolution scaled pearson correlation, TRMISR with a shallow transofmer (1h1d) is competitive with
+In aggregate resolution-scaled Pearson correlation, TRMISR with a shallow transformer (1h1d) is competitive with
 but does not consistently outperform the 20-frame MISRGRU foundational model on fast 
 blinking and high SNR conditions. However the attention advantage starts to show when models 
 are evaluated on worse conditions where TRMISR achieved consistently higher RSP. This finding is consistent
@@ -56,11 +56,12 @@ Ablating the Transformer fusion across four configurations (1h1d, 2h2d, 4h3d, 8h
 shows that RSP does not improve meaningfully beyond 1h1d (Figure~\ref{fig:transformer_sizes}), 
 while latency grows steeply: going from 1h1d to 4h3d triples the parameter count 
 but increases $N{=}8$ latency by 2.4$\times$. 
-This indicates that the encoder and decoder, rather than the fusion module, are the
-architectural bottleneck for reconstruction quality.                          
-Future improvements should focus on the encoder and decoder blocks (e.g.\ deeper residual
-blocks, deformable convolutions, preprocessing such as including average widefield) 
-rather than increasing the size of the transformers.                      
+Both enlarging the Transformer fusion module and widening the encoder do improve
+reconstruction quality, but only at a steep latency cost: the gains are statistically
+significant yet small in mean RSP, while latency grows several-fold.                          
+% Future improvements should focus on the encoder and decoder blocks (e.g.\ deeper residual
+% blocks, deformable convolutions) 
+% rather than increasing the size of the transformers.                      
 
 \section{Towards Video Super-Resolution - Streaming MISRGRU}                                
 With TRMISR's substantially slower latency and large memory requirements
@@ -96,7 +97,7 @@ At speeds up to $5\mu$m/s motion speed the DPA variant achieved similar RSP scor
 in the fast-high SNR condition, Finetuning the model also worked, however, during visual inspection
 DPA module showed less blur artefacts and faster convergence.
 
-Importantly, the motion-finetuned DPA model outperforms staticaly trained Streaming MISRGRU
+Importantly, the motion-finetuned DPA model outperforms the statically trained Streaming MISRGRU
  on both static and motion augmented evaluation dataset. TRMISR still achieves higher reconstruction accuracy
  on slow blinking and low signal-to-noise ratio images; this
  crossover between DPA and TR-MISR is significant when compared for each blinking and SNR condition separately

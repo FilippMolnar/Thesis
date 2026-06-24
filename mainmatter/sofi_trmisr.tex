@@ -3,7 +3,7 @@
 \label{ch:method}
 %% Target length: ~15 pages
 %% Core technical contribution chapter.
-This chapter describes the our contributions to this thesis.
+This chapter describes our contributions to this thesis.
 Background described the base architectures and components of MISRGRU 
 and TR-MISR in
 Sections~\ref{sssec:misrgru_bg} and~\ref{sssec:trmisr_bg}.
@@ -59,23 +59,36 @@ This is tested out empirically: an ablation that concatenates an averaged
   as the blinking slows and the photon count drops
   (Appendix~\ref{app:encoder_ablation}).
 
-We reduced the channel width from 64 to 24 to lower latency and to match the
-  RESURF
-  configuration~\cite{resurf2024}, which enables a fair comparison of fusion mechanism.
-  \todo{cut down from 64 to 24 to match RESURF. 
-I understand the motivation, but later in your conclusions, 
-you that the encoder/decoder is the bottleneck, 
-so does it still justify cutting from 64 to 24?}
-Channel size is reduced from 64 to 24 to decrease latency and to match the RESURF adaptation~\cite{resurf2024}.
+We reduce the encoder width from 64 to 24 channels.
+Reducing the encoder width from 64 to 24 channels roughly halves inference latency at every
+frame count (e.g.\ 226\,ms vs.\ 436\,ms at 20 frames for 512x512 input images), 
+while costing only a small drop in reconstruction quality (aggregate RSP
+$0.8925$ vs.\ $0.8955$, a statistically significant but minor $0.003$ decrease that widens to
+$0.006$ in the hardest slow-blinking, low-SNR condition).
+We therefore use the 24-channel encoder for all fusion-mechanism comparisons, both to match
+the RESURF configuration~\cite{resurf2024} and because the latency saving outweighs the
+marginal quality loss; the wider 64-channel encoder is preferable when quality is prioritised.
 
 \paragraph{Decoder.}
-The original TR-MISR decoder uses a $3\times$ PixelShuffle for the 
+The original TR-MISR decoder uses a $3\times$ PixelShuffle~\cite{shi2016pixelshuffle,zhuocen2023espcn} for the
 $3\times$ upscaling.
+PixelShuffle (sub-pixel convolution) rearranges the channels of a low-resolution feature map
+of shape $(C\cdot r^2, H, W)$ into a high-resolution map of shape $(C, rH, rW)$, performing the
+upscaling by an integer factor $r$ without learnable upsampling parameters (Figure~\ref{fig:pixelshuffle}).
 For the $(2H-7)\times(2W-7)$ SOFI upscale, we compare two decoder designs:
 a $2\times$ PixelShuffle followed by a centre-crop to match the target resolution,
- and a learned transposed convolution that achieves the exact 
+ and a learned transposed convolution that achieves the exact
  $(2H-7)\times(2W-7)$ output size directly.
 These are described in detail in Section~\ref{sec:decoder}.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\linewidth]{figures/pixelshuffle.jpg}
+  \caption{PixelShuffle (sub-pixel convolution) upscaling by a factor $r$: the
+  $(C\cdot r^2, H, W)$ feature map is rearranged into a $(C, rH, rW)$ high-resolution
+  output~\cite{shi2016pixelshuffle,zhuocen2023espcn}.}
+  \label{fig:pixelshuffle}
+\end{figure}
 
 % \paragraph{Positional encoding.}
 % The original TR-MISR fusion is has no positional encoding on the frame
@@ -92,7 +105,7 @@ These are described in detail in Section~\ref{sec:decoder}.
 The base TR-MISR fusion module is described in Section~\ref{sssec:trmisr_bg}, but in short
 it pays attention to encoded input frames by fusing the information into an additional learnable embedding
 vector.
-Fer every pixel $(h,w)$, in the sequence of $N$ frames:
+For every pixel $(h,w)$, in the sequence of $N$ frames:
 the embedding token $x^0$ is prepended (Eq.~\eqref{eq:trmisr_z0}), and after $M$
 Transformer layers the token at index~0 is extracted as the fused feature (Eq.~\eqref{eq:trmisr_msa}--\eqref{eq:trmisr_ffn}).
 We identified two problems with this design and propose fixes for both.
@@ -268,11 +281,11 @@ follow and evaluated in Chapter~\ref{ch:results}.
 
 \subsection{Converting MISRGRU to many-to-many}
 \label{sec:streaming_arch}
-Architecture where many inputs can many produce many outputs would address both 
+An architecture where many inputs produce many outputs would address both
 problems: one SR image is produced per incoming frame, 
 and the GRU hidden state is carried across frames rather than reset between batches. 
 This way the model could accumulate more information from input frames,
-which can help to better reconstruct, while keeping the latecy low per 
+which can help to better reconstruct, while keeping the latency low per
 reconstructed image.
 
 
@@ -284,7 +297,7 @@ aggregates features from the last $n$ hidden states before decoding to produce
 $\hat{\mathbf{Y}}_t$. 
 This design retains the multi-frame fusion capability of batch MISRGRU while 
 enabling streaming inference without resetting the hidden state every K frames, while
-also saving comupute by remembering $h_{k-n} \dots h_{k-1}$.
+also saving compute by remembering $h_{k-n} \dots h_{k-1}$.
 
 We designed experiments in section~\ref{ssec:kbuf_misrgru} to see how this architecture without 
 reinitializing the hidden state performs when run longer than 20 frames. 
@@ -307,7 +320,7 @@ The only architectural change is in how the ConvGRU hidden state is managed.
 In the batch model, the hidden state is zeroed at the start of each new sample.
 In the streaming model, $\mathbf{h}_t$ is carried across successive frames and never reset
 between time steps, so the GRU accumulates context from the entire history of frames seen so far.
-The GAP in RESFURF\cite{resurf2024} is computed as sum of all $h_{1} \dots h_{k}$. 
+The GAP in RESURF\cite{resurf2024} is computed as sum of all $h_{1} \dots h_{k}$.
 Removing it forces both ConvGRU and Decoder to reconstruct the SR output from last hidden 
 state $h_k$ at every new frame.
 
@@ -322,13 +335,6 @@ state $h_k$ at every new frame.
   \label{fig:streaming_arch}
 \end{figure}
 
-The streaming MISRGRU (Figure~\ref{fig:streaming_arch}) reuses the encoder and decoder from the
-batch MISRGRU without modification.
-The only architectural change is in how the ConvGRU hidden state is managed.
-In the batch model, the hidden state is zeroed at the start of each new sample.
-In the streaming model, $\mathbf{h}_t$ is carried across successive frames and never 
-reset between time steps, so the GRU accumulates context from the entire history of 
-frames seen.
 % \begin{equation}
 %   \mathbf{h}_t = \text{ConvGRU}(\text{Encoder}(\mathbf{l}_t),\ \mathbf{h}_{t-1}),
 %   \qquad
@@ -344,7 +350,7 @@ To solve this we \emph{truncated BPTT} (TBPTT). The sequence is split into chunk
 length \texttt{chunk\_size}, and the hidden state is detached from the computational graph at each 
 chunk boundary. Only gradients within a chunk are backpropagated. 
 Moreover this helps the model to stabilize, train faster for more epochs and trains model to learn from 
-warm state when hidden state is detached wich resembles real world scenario during long inferences.
+warm state when hidden state is detached, which resembles a real-world scenario during long inferences.
 
 A second key hyperparameter is \texttt{loss\_last\_n}: supervision is applied only on the 
 \emph{last} $n$ frames of each chunk, allowing the GRU to accumulate meaningful context for 
@@ -402,11 +408,11 @@ the reconstruction accuracy of DPA MISRGRU.
 
 A model trained only on static data, where every frame shows the same field of view, has no
 incentive to track the current position of the sample.
-In live-cell imaging, organels can move at
+In live-cell imaging, organelles can move at
 0.5--5\,\textmu m/s~\cite{tang2013fast} depending on a structure. This corresponds to 
 $\approx$0.05--0.5 pixels per frame, our pixel size (100\,nm) and acquisition rate of 100\,fps.
 
-To traing the streaming model robust motion, we introduce \emph{motion augmentation} during
+To train the streaming model to be robust to motion, we introduce \emph{motion augmentation} during
 training.
 For each training sequence, with probability $p = 0.7$ a sinusoidal drift trajectory is
 sampled independently for each spatial axis.
@@ -429,7 +435,7 @@ prevents the model from degrading on non-moving data.
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=\linewidth]{figures/motion_shit.png}
+  \includegraphics[width=\linewidth]{figures/motion_augmentation.png}
   \caption{Motion augmentation. A sinusoidal drift trajectory is sampled per axis and
   used to shift the $256{\times}256$ source LR frame via bilinear interpolation; a fixed
   $180{\times}180$ center crop then slides across the source field of view. The HR ground
@@ -482,8 +488,8 @@ Appendix~\ref{app:streaming_misrgru_ablations}.
 Training uses up to 2000 simulated samples from the synthetic dataset described in
 Chapter~\ref{ch:datasets}.
 A 90/10 random split assigns samples to training and validation sets during training.
-Once training is completed the separate evaluation dataset of 12 different conditios of 40 images
- is used to the test set is evaluate the performance of models.
+Once training is completed, a separate evaluation dataset of 12 different conditions with 40 images
+each is used as the test set to evaluate the performance of the models.
 
 \paragraph{Hardware.}
 TRNet experiments were run on a single NVIDIA RTX A5000 (24\,GB). Training took approximately 4 and 9 hours

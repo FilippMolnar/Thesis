@@ -409,6 +409,17 @@ rather than one step at a time the Transformer avoids the sequential bottleneck 
 recurrent networks. 
 The cost is that computing the full attention matrix requires $O(N^2)$ operations and memory,
 which is acceptable for the short sequences ($N \leq 30$) used in this work.
+The overall structure of the Transformer encoder, with its stacked self-attention and
+feed-forward blocks, is shown in Figure~\ref{fig:transformer_architecture}.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.55\linewidth]{figures/transformer_architecture.png}
+  \caption{The Transformer architecture~\cite{vaswani2017attention}. Each encoder layer
+    combines multi-head self-attention with a position-wise feed-forward network, using
+    residual connections and layer normalisation.}
+  \label{fig:transformer_architecture}
+\end{figure}
 
 \subsubsection{Scaled Dot-Product Attention}
 
@@ -435,9 +446,19 @@ is large, which would push the softmax into regions of very small gradient.
 \subsubsection{Multi-Head Attention}
 
 Rather than performing a single attention operation, multi-head attention~\cite{TR-MISR-original}
-maps the query vector $q_i$ and key vector $k_i$ to different subspaces $\{\mu_1 \dots \mu_q\}$ 
-of the representation space and computes attention in each subspace separately, 
-allowing the model to attend to different aspects of the features.
+maps the query vector $q_i$ and key vector $k_i$ to different subspaces $\{\mu_1 \dots \mu_q\}$
+of the representation space and computes attention in each subspace separately,
+allowing the model to attend to different aspects of the features
+(Figure~\ref{fig:mha_architecture}).
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.45\linewidth]{figures/MHA_architecture.png}
+  \caption{Multi-head attention~\cite{vaswani2017attention}. The queries, keys, and values are
+    linearly projected into subspaces, scaled dot-product attention is computed in each head
+    in parallel, and the head outputs are concatenated and projected back to the input dimension.}
+  \label{fig:mha_architecture}
+\end{figure}
 
 Each head $s \in \{1,\ldots,q\}$ produces an output sequence
 $Y^s = [y^s_1, \ldots, y^s_n]$ via Eq.~\eqref{eq:attention}.
@@ -581,7 +602,7 @@ in parallel which avoids sequential processing of the ConvGRU.
 The fusion is also \emph{permutation invariant}: the self-attention treats the $N$ frame features
 as an unordered set, since no positional encoding is applied along the frame dimension.
 This aligns naturally with the SOFI algorithm, which estimates cumulants from fluorescence 
-fluctuations and, in its standard zero-lag formulation, is invariant to the ordering of frames. 
+fluctuations and and is invariant to the ordering of frames. 
 Therefore, treating the input sequence as an unordered set. 
 
 
