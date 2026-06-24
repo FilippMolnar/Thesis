@@ -76,6 +76,17 @@ computational latency in the range of seconds even with GPU
 acceleration~\cite{resurf2024}.
 This is incompatible with real-time live-cell imaging.
 
+The cost of this offline latency is more than inconvenience. When frames are
+reconstructed only after the acquisition, the experimenter stays blind to the result
+until it is over. Many failures such as
+photobleaching, an incorrect exposure, or the cell drifting out of the field of
+view go unnoticed until the sample is already wasted. 
+Real-time reconstruction closes this loop: it lets the
+operator watch the super-resolved structure as it forms and intervene while the
+experiment runs, refocusing, repositioning, adjusting parameters, or aborting early.
+Latency is therefore not a secondary optimisation but the property that decides
+whether super-resolution microscopy can interact with living systems at all.
+
 Deep learning offers a promising route to reduce both the number of frames
 required and the inference latency.
 Rather than computing cumulants analytically, a neural network can learn to map
