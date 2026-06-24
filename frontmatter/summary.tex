@@ -8,7 +8,7 @@ limit using only a conventional widefield microscope, but it requires hundreds o
 and offline cumulant computation, making it too slow for real-time live-cell imaging.
 Recent work (RESURF) showed that a recurrent deep network, SOFI-MISRGRU, can approximate a
 second-order SOFI reconstruction from as few as eight frames at real-time speed. Its
-ConvGRU fusion is, however, inherently sequential and aggregates frames through an
+fusion mechanism is inherently sequential and aggregates frames through an
 unnormalised summation that does not generalise beyond the training frame count.
 
 This thesis investigates whether a Transformer that fuses all frames in parallel through

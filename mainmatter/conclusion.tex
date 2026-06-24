@@ -74,7 +74,7 @@ At $N{=}20$ frames on a 512$\times$512 field of view, the streaming model takes
 model's 170.29\,ms per output at the same frame count.
 At 20 accumulated frames the streaming model's RSP converges to the batch model's value,
 and it continues to improve beyond that point as the GRU accumulates more context across
-the acquisition a capability the batch model lacks entirely. S
+the acquisition a capability the batch model lacks entirely.
 
 Training the streaming model required truncated backpropagation through time (TBPTT) to
 keep memory tractable for long sequences.

@@ -67,9 +67,14 @@ significant yet small in mean RSP, while latency grows several-fold.
 A natural architectural extension is a streaming TRMISR. This thesis pairs a Streaming MISRGRU
 with a batch Transformer, but never a streaming Transformer, leaving one cell of the design
 space unexplored. Since attention degraded more gracefully than recurrence under the harder
-blinking and low-SNR conditions, an attention variant with a key-value cache that
+blinking and low-SNR conditions, so carrying that robustness into the continuous-output regime is promising.
+An attention variant with a key-value cache that
 emits one output per frame could combine the reconstruction robustness of TRMISR with the
 throughput of the streaming GRU. 
+Finally, the motion augmentation developed here should transfer: 
+pairing such a model with motion-augmented training and a
+DPA module could extend its robustness from blinking and low-SNR conditions to
+moving samples as well.
 
 \section{Towards Video Super-Resolution - Streaming MISRGRU}                                
 With TRMISR's substantially slower inference speed,
@@ -121,7 +126,7 @@ Degradation concentrated in the slow conditions where temporal averaging is most
 This trade-off is expected: a model trained to handle inter-frame displacement     
 cannot simultaneously exploit the long-range temporal correlation that static,    
 slow-blinking acquisitions provide.                                                    
-For deployment, the static streaming model is prefered when the sample is
+For deployment, the static streaming model is preffered when the sample is
 known to be stationary or the drift is below the model's tolerance; the                
 motion-finetuned or DPA variant should be selected when the sample is expected to exhibits visible  
 drift relative to the field of view.
@@ -149,9 +154,12 @@ higher accuracy number. This matters as AI moves from offline benchmarks into li
 \subsection{Implications, applicability, and stakeholders}
 The direct users, the biologists operating the instrument, benefit most: real-time feedback
 turns a passive recording into an interactive process and lets them correct or abandon a
-measurement before it is wasted. But a tool that is easy to run and gives reasonable results
-is also easy to over-trust, and that risk grows as it reaches users less able to judge when
-it fails. 
+measurement before it is wasted. The same properties open up applications beyond passive
+observation. In image-based cell sorting, for instance, cells must be classified on the fly
+from a handful of frames before a sorting decision is made; a model that super-resolves from
+only a few frames and corrects for sample drift could supply sharper, motion-stabilised
+images within the sorting latency budget, improving the discrimination of subcellular
+phenotypes that a diffraction-limited frame cannot resolve. 
 
 The main risk of a generative
 model is hallucination: it can produce plausible structure that the measurement does not
@@ -163,12 +171,12 @@ about the limits of the validation, and treat anything visible only in the model
 something to confirm independently. The tool should be presented as a fast approximation of a
 trusted method, not as a replacement for verification.
 
-There is also an environmental cost. Training these models consumes energy, so a fair view of
-efficiency should weigh the one-time training cost against the savings over the model's
-deployed lifetime; for a model trained once and run many times, the trade is favourable.
-Reproducibility is the related obligation: because the results depend on the training data,
-that data and its assumptions must be documented and shared for others to trust and extend
-the work.
+% There is also an environmental cost. Training these models consumes energy, so a fair view of
+% efficiency should weigh the one-time training cost against the savings over the model's
+% deployed lifetime; for a model trained once and run many times, the trade is favourable.
+% Reproducibility is the related obligation: because the results depend on the training data,
+% that data and its assumptions must be documented and shared for others to trust and extend
+% the work.
 
 \section{Limitations and Future Directions}
 \label{sec:limitations}
