@@ -4,7 +4,8 @@
                  
 Having real-time feedback of the reconstruction matters a lot for live-cell imaging because
 it allows biologists to observe the live sample as it interacts with the world and intervene
-if something goes wrong.
+if something goes wrong. Ideally, a smart microscope could act on this feedback on its own,
+adjusting the acquisition without an operator in the loop.
 In a post-processing workflow the
 low-resolution frames are collected and reconstructed only afterwards, so failures such as
 focus drift, photobleaching, an incorrect exposure, or the cell moving out of the field of
@@ -63,8 +64,15 @@ significant yet small in mean RSP, while latency grows several-fold.
 % blocks, deformable convolutions) 
 % rather than increasing the size of the transformers.                      
 
+A natural architectural extension is a streaming TRMISR. This thesis pairs a Streaming MISRGRU
+with a batch Transformer, but never a streaming Transformer, leaving one cell of the design
+space unexplored. Since attention degraded more gracefully than recurrence under the harder
+blinking and low-SNR conditions, an attention variant with a key-value cache that
+emits one output per frame could combine the reconstruction robustness of TRMISR with the
+throughput of the streaming GRU. 
+
 \section{Towards Video Super-Resolution - Streaming MISRGRU}                                
-With TRMISR's substantially slower latency and large memory requirements
+With TRMISR's substantially slower inference speed,
 we saw clearer path to try optimize the MISRGRU for real-time video super-resolution 
 during microscope acquisitions.
 We explored reusing weights from foundational MISRGRU with sliding-window approach, quickly realizing the 
@@ -76,6 +84,9 @@ acquisition.
 At $N{=}20$ frames on a 512$\times$512 field of view, streaming MISRGRU takes 11.29\,ms using PyTorch
 per SR output compared to 170.29\,ms for the batch model a $15\times$ improvement in
 per-output latency.
+The latency results reported here are obtained with PyTorch inference. Compiling the models
+with TensorRT and applying FP16 or INT8 quantisation could potentially half the inference times.
+
 
 Streaming MISRGRU RSP converges to the batch-model value by the 20th accumulated frame
 (Figure~\ref{fig:accumulating_frames}), and continues to improve beyond that     
@@ -89,13 +100,16 @@ structure that moves over the accumulation window appears blurred in the output,
 the presence and direction of motion to the operator.
 
 \section{Motion reconstruction robustness}                                                  
-Real-time imaging of moving structures was achieved with a           
+Real-time imaging of moving structures was achieved with
 motion-augmented training.
-We compared finetuning the baseline model with adding 
-Deformable Phase-space Alignment (DPA) module.     
-At speeds up to $5\mu$m/s motion speed the DPA variant achieved similar RSP score to its static reference
-in the fast-high SNR condition, Finetuning the model also worked, however, during visual inspection
-DPA module showed less blur artefacts and faster convergence.
+We compared finetuning the baseline model against adding a
+Deformable Phase-space Alignment (DPA) module.
+The final DPA model proved effectively motion-invariant: at fast/high-SNR its RSP held near
+0.93 from static through $5\,\mu$m/s, while the static-trained streaming, batch MISRGRU and
+TR-MISR baselines collapsed (below 0.73 at $2\,\mu$m/s and 0.55 at $5\,\mu$m/s) because they
+fuse spatially misaligned frames into a blur. Plain finetuning also handled motion but
+trailed DPA by several RSP points and, on visual inspection, left more blur and ghosting
+artefacts while converging more slowly.
 
 Importantly, the motion-finetuned DPA model outperforms the statically trained Streaming MISRGRU
  on both static and motion augmented evaluation dataset. TRMISR still achieves higher reconstruction accuracy
@@ -124,8 +138,6 @@ fluorescence microscopy. The central question, whether parallel attention should
 recurrent processing, repeats the shift the field went through when Transformers replaced
 recurrent networks in language and vision. Here that shift did not carry over cleanly as recurrent
 architecture achieved lower latency and better results on high signal-to-noise data.
-The practical takeaway is that the right model depends on the
-deployment constraints, not on benchmark rankings.
 
 The work also reuses an architecture built for one domain in a very different one, a common
 pattern in DSAIT. This required real adaptation and domain knowledge rather than drop-in
@@ -178,15 +190,6 @@ for the specific sample being imaged, or different PSF. We believe that deep-lea
 operate like SOFI, generalising across acquisitions without being retrained for a particular
 point-spread function or sample structure.
 
-A natural architectural extension is a streaming TRMISR. This thesis pairs a Streaming MISRGRU
-with a batch Transformer, but never a streaming Transformer, leaving one cell of the design
-space unexplored. Since attention degraded more gracefully than recurrence under the harder
-blinking and low-SNR conditions, an attention variant with a key-value cache that
-emits one output per frame could combine the reconstruction robustness of TRMISR with the
-throughput of the streaming GRU.
-
-The latency results reported here are obtained with PyTorch inference. Compiling the models
-with TensorRT and applying FP16 or INT8 quantisation can half the inference times.
 
 A further important direction is to equip the models with uncertainty estimates~\cite{qiao2025dpatisr}.
 The most serious risk of replacing SOFI with a trained model is hallucination: we ask the network

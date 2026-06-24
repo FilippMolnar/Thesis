@@ -284,7 +284,7 @@ foundational model in prior work, and 30 frames tests scalability.
 
 % \begin{table}[htbp]
 %   \centering
-%   \caption{GPU memory usage during inference on N 512×512 images (batch size 1) on NVIDIA RTX A5000.}
+%   \caption{Peak GPU memory usage during inference on N 512×512 images (batch size 1) on NVIDIA RTX A5000.}
 %   \label{tab:memory_usage}
 %   \begin{tabular}{lcccc}
 %     \hline
@@ -311,21 +311,12 @@ grows with model size.
 % Major limitation of TRMISR is its peak memory usage (Table~\ref{tab:memory_usage}), where 
 % for 20 frame inference requires 6.5 GB.
 
-% The memory footprint (Table~\ref{tab:memory_usage}) exposes the central trade-off of
-% parallel fusion. Because TR-MISR keeps all $N$ frame tokens resident for self-attention,
-% its memory grows linearly at roughly $330$\,MB per frame ($2{,}644$\,MB at $N=8$, up to
-% $13{,}172$\,MB at $N=40$, fitting $\text{mem}\approx 12.32 + 329\,L$\,MB). The growth is
-% linear rather than quadratic because under \texttt{torch.no\_grad()} no autograd graph is
-% stored, so each layer's activations---including the quadratic $L^2$ attention matrix---are
-% freed as soon as they are used rather than accumulating across the six layers. The only
-% memory that must persist for the entire forward pass is the stack of per-frame encoded
-% features, which grows linearly in $L$; the quadratic attention term is transient and stays
-% below the peak at the frame counts we tested. MISRGRU, by contrast, collapses the temporal dimension into a single
-% hidden state and adds only $\sim$$97$\,MB per frame, using $3.4\times$ less memory at
-% matched frame counts. Memory, rather than latency, thus becomes TR-MISR's binding
-% constraint at scale: on the $24$\,GB A5000 the larger 8h6d variant could not be evaluated
-% at any frame count (Table~\ref{tab:inference_latency}). For the real-time target ($N=8$),
-% however, the $2.6$\,GB footprint fits comfortably on commodity hardware.
+% The peak memory footprint (Table~\ref{tab:memory_usage}) exposes the central trade-off of
+% parallel fusion: because TR-MISR keeps all $N$ frame tokens for self-attention, its
+% memory grows roughly linearly at $\sim$$330$\,MB per frame ($2{,}644$\,MB at $N=8$ up to
+% $13{,}172$\,MB at $N=40$), whereas MISRGRU collapses the temporal dimension into a single
+% hidden state and uses $3.4\times$ less memory at matched frame counts. Memory, rather than
+% latency, thus becomes TR-MISR's binding constraint at scale..
 
 \section{Modifying MISRGRU for Video SR Reconstruction}
 

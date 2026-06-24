@@ -95,17 +95,17 @@ is unavoidable in live-cell imaging.
 Two strategies were evaluated: direct finetuning on motion-augmented data, and the addition
 of a Deformable Phase-space Alignment (DPA) module that corrects the GRU hidden state
 into the coordinate frame of the current input before the recurrent update.
-At 0.2\,px/frame motion speed the DPA variant reached an RSP of 0.889 on fast-high-SNR
-conditions, close to the static baseline of 0.905, while the finetune-only variant scored
-0.863.
-Visual inspection confirmed that the DPA model produces less ghosting and blur effects
-from misaligned hidden states.
+The final DPA model is effectively motion-invariant: at fast/high-SNR its reconstruction
+fidelity holds whether the sample is static or moving up to 5.0\,$\mu$m/s, whereas the
+static-trained TR-MISR and MISRGRU baselines collapse at those same speeds.
+DPA also outperforms the plain finetune-only variant, with visual inspection confirming less
+ghosting and blur from misaligned hidden states.
 
-\todo{modify this when DPA finishes training on 300 epochs}
-Both motion-capable models retain competitive RSP on static test data; the degradation is
-concentrated in slow-low-SNR conditions where temporal averaging is most valuable.
+On static data the only degradation is in slow-low-SNR conditions, where long-range temporal
+averaging is most valuable and a model trained to absorb inter-frame displacement can no
+longer fully exploit it; here the TRMISR keep a small edge.
 For deployment, the unmodified streaming model is preferred when the sample is stationary
-or drift is sub-pixel; the DPA variant should be selected when the specimen exhibits
+or drift is sub-pixel; the DPA variant should be selected whenever the specimen exhibits
 visible drift relative to the field of view.
 
 \section*{Summary and outlook}
@@ -116,8 +116,8 @@ fraction of the time required by classical SOFI.
 TR-MISR's attention mechanism provides robust quality under low-SNR conditions and a
 practically valuable frame-count generalization property that the GRU cannot match.
 The streaming MISRGRU architecture removes the batch acquisition bottleneck entirely,
-delivering continuous SR video at 11\,ms per frame, comfortably within the 25\,ms budget
-of a 40\,fps acquisition, while converging to the quality of the foundational batch model.
+delivering continuous SR video at 11\,ms per frame or 17\,ms for DPA model, comfortably within the 25\,ms budget
+of a 40\,fps acquisition, while improving the reconstruction quality with more frames input.
 
 All quantitative results are obtained on synthetic simulated microtubule data.
 Transfer to real experimental microscope data remains an open step before the actual deployment.
