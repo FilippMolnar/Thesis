@@ -8,32 +8,11 @@ Background described the base architectures and components of MISRGRU
 and TR-MISR in
 Sections~\ref{sssec:misrgru_bg} and~\ref{sssec:trmisr_bg}.
 
-Here we describe only what is new: the modifications made when adapting those architectures to
+Here we describe only what is new: the modifications made when adapting model architectures to
 fluorescence microscopy, an improved Transformer fusion module, a streaming variant of MISRGRU,
 and a motion augmentation training strategy.
 
-\section{Problem Formulation}
-\label{sec:problem}
-%% Multi-image SR for SOFI:
-%% \hat{Y} = f^γ_{θ,α,β}({l_1, ..., l_N})
-%% Inputs: N LR fluorescence frames l_i ∈ R^{1×H×W}
-%% Output: 2nd-order SR image \hat{Y} ∈ R^{1×γH×γW}, γ ≈ 1.984
-%% Key challenge: γ is non-integer (2n-7 for n=2 SOFI) → not a power-of-2 upscale
-We define two problem settings: the first is the multi-image super-resolution (MISR) task, which goal is to 
-produce a single high-resolution image from a sequence of low-resolution frames defined as $\{\mathbf{l}_1, \mathbf{l}_2, \ldots, \mathbf{l}_N\}$. 
-The second is video super-resolution (VSR), which extends the first by producing a super-resolved image for 
-every frame in the movie, effectively reconstructing a super-resolved video. The high-resolution output is 
-defined as $\mathbf{Y}_t \in \mathbb{R}^{C \times \gamma H \times \gamma W}$ for each time step $t$, and produced from the sequence of low-resolution frames up 
-to that time step, $\{\mathbf{l}_1, \mathbf{l}_2, \ldots, \mathbf{l}_t\} \in \mathbb{R}^{C \times H \times W}$, 
-where $C$ is the number of channels (in our case 1 as the images are grayscale), W and H are the width and height dimensions of 
-low-resolution frames and $\gamma$ is the upscaling factor.
 
-For second-order SOFI, the high-resolved target has spatial dimensions of $(2H - 7) \times (2W - 7)$. This is 
-due to the nature of SOFI reconstruction algorithm. Thus our models need to be designed to produce an output 
-of this specific size, which is not a standard 2 times upscale. 
-
-The streaming variant of RESURF architecture, described in Section~\ref{sec:streaming_arch}, aims 
-to solve the VSR task.
 
 
 % The model is formulated as a function composition:
@@ -53,17 +32,40 @@ to solve the VSR task.
 % The following sections detail each module and the key design choices that differentiate this work from prior approaches.
 
 
-\section{Modifications to TR-MISR}
+\section{Modifications to TRMISR}
 \label{sec:adaptation}
 
 \paragraph{Encoder.}
-Both models share the same encoder design, adapted from the original works by 
-\cite{resurf2024,TR-MISR-original}.
-The main difference to original TR-MISR paper is that the encoder accepts 
-a single fluorescence channel instead of two (NIR and RED), 
-and we do not concatenate a median reference image as 
-in fluorescence microscopy we not does not benefit from 
-co-registration in the same way as satellite imageing.
+Our modified TRMISR shares the same encoder design as RESURF~\cite{resurf2024}. 
+The original TR-MISR encoder takes a two-channel input formed by concatenating
+  each
+  grayscale low-resolution frame with a median reference
+  image. In TR-MISR the median reference serves as an
+  implicit co-registration anchor and a shared representation for separating redundant
+  content from
+  frame-unique detail~\cite{TR-MISR-original}.
+
+We drop the median reference and use a single-channel input.
+  Removing the median does not discard the information that drives
+  super-resolution. The
+  resolution gain in SOFI comes from the blinking-induced intensity
+fluctuations across the frame ensemble. 
+
+This is tested out empirically: an ablation that concatenates an averaged
+  reference image as a second encoder channel is significantly worse than the
+  single-channel model across every imaging condition and on every paired test
+  sample ($\overline{d} = +0.027$ RSP pooled in favour of the single channel,
+  $p \approx 2.3\times10^{-80}$, rank-biserial $=-1.00$), with the gap widening
+  as the blinking slows and the photon count drops
+  (Appendix~\ref{app:encoder_ablation}).
+
+We reduced the channel width from 64 to 24 to lower latency and to match the
+  RESURF
+  configuration~\cite{resurf2024}, which enables a fair comparison of fusion mechanism.
+  \todo{cut down from 64 to 24 to match RESURF. 
+I understand the motivation, but later in your conclusions, 
+you that the encoder/decoder is the bottleneck, 
+so does it still justify cutting from 64 to 24?}
 Channel size is reduced from 64 to 24 to decrease latency and to match the RESURF adaptation~\cite{resurf2024}.
 
 \paragraph{Decoder.}
@@ -108,6 +110,10 @@ equal weight regardless of its signal quality.
 We replace the manual attention implementation with \texttt{nn.MultiheadAttention}%
 \footnote{\url{https://docs.pytorch.org/docs/stable/generated/torch.nn.MultiheadAttention.html}},
 which applies the correct $1/\sqrt{d_k}$ scaling internally.
+However, this bug only affects multi-headed attention. In the final TRMISR design 
+we use single head, and single depth attention fusion mechanism, since our ablation study shows
+that increasing 
+the number of heads and attention depth increases latency without significantly improving accuracy.
 
 \subsection{Problem 2: Class Token replaced with CrossAttentionAggregator}
 
@@ -349,7 +355,7 @@ quality, which prevents the GRU from learning to defer quality improvements to l
 
 \subsubsection{Deformable Phase-space Alignment modification(DPA)}
 \label{sssec:dpa}
-\todo{add figure explaining DPA}
+% \todo{add figure explaining DPA}
 
 In live-cell imaging, the imaged structure can drift between frames, meaning
 $\mathbf{h}_{t-1}$ may encode a field of view that has shifted relative to the
@@ -371,7 +377,7 @@ the inverse FFT.
 
 \paragraph{Stage 2: Deformable convolution for local correction (\texttt{DeformableConvAlignment}).}
 Residual non-rigid deformations are handled by a deformable convolution stage.
-A second CNN predicts per-pixel sampling offsets and modulation masks from the
+A second CNN predicts per-pixel sampling offsets and from the
 concatenated pair $[\mathbf{h}_\phi,\, \mathbf{f}_t]$.
 The offsets warp the sampling grid of a $3{\times}3$ convolution applied to
 $\mathbf{h}_\phi$, while the masks gate each sample point, allowing the network to
@@ -421,7 +427,17 @@ per-frame HR target that matches the shifted field of view.
 The remaining 30\% of training sequences use the unshifted static patches, which
 prevents the model from degrading on non-moving data.
 
-\todo{add image describing sinusoidal shift and crop}
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\linewidth]{figures/motion_shit.png}
+  \caption{Motion augmentation. A sinusoidal drift trajectory is sampled per axis and
+  used to shift the $256{\times}256$ source LR frame via bilinear interpolation; a fixed
+  $180{\times}180$ center crop then slides across the source field of view. The HR ground
+  truth is shifted by the same displacement scaled by the upsampling factor and
+  center-cropped to the matching size, yielding a per-frame HR target aligned with the
+  shifted view.}
+  \label{fig:motion_augmentation}
+\end{figure}
 
 
 
@@ -429,8 +445,6 @@ prevents the model from degrading on non-moving data.
 
 \section{Training Procedure}
 \label{sec:training}
-
-\todo{todo}
 
 \paragraph{Optimiser.}
 All models are trained with Adam~\cite{kingma2014adam} ($\beta_1 = 0.9$, $\beta_2 = 0.999$).

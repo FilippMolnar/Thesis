@@ -97,11 +97,13 @@ in the fast-high SNR condition, Finetuning the model also worked, however, durin
 DPA module showed less blur artefacts and faster convergence.
 
 Importantly, the motion-finetuned DPA model outperforms staticaly trained Streaming MISRGRU
- on both static and moving evaluation dataset. TRMISR still achieves higher reconstruction accuracy
- on slow blinking and low signal-to-noise ratio images (Figure~\ref{fig:motion_snr_static}).
+ on both static and motion augmented evaluation dataset. TRMISR still achieves higher reconstruction accuracy
+ on slow blinking and low signal-to-noise ratio images; this
+ crossover between DPA and TR-MISR is significant when compared for each blinking and SNR condition separately
+ (Appendix~\ref{app:significance}).
 
 Degradation concentrated in the slow conditions where temporal averaging is most valuable.
-This trade-off is expected: a model regularised to handle inter-frame displacement     
+This trade-off is expected: a model trained to handle inter-frame displacement     
 cannot simultaneously exploit the long-range temporal correlation that static,    
 slow-blinking acquisitions provide.                                                    
 For deployment, the static streaming model is prefered when the sample is
@@ -109,7 +111,54 @@ known to be stationary or the drift is below the model's tolerance; the
 motion-finetuned or DPA variant should be selected when the sample is expected to exhibits visible  
 drift relative to the field of view.
 
+\section{Reflection in the broader DSAIT context}
+
+This section places the work in the wider Data Science and Artificial Intelligence
+Technology (DSAIT) field and discusses what it means for the people who would use it.
+
+\subsection{Relation to the broader field}
+At a higher level, this thesis fuses a temporal sequence of observations into a single
+high-quality output under a tight latency budget, a problem that appears well beyond
+fluorescence microscopy. The central question, whether parallel attention should replace
+recurrent processing, repeats the shift the field went through when Transformers replaced
+recurrent networks in language and vision. Here that shift did not carry over cleanly as recurrent
+architecture achieved lower latency and better results on high signal-to-noise data.
+The practical takeaway is that the right model depends on the
+deployment constraints, not on benchmark rankings.
+
+The work also reuses an architecture built for one domain in a very different one, a common
+pattern in DSAIT. This required real adaptation and domain knowledge rather than drop-in
+reuse, which shows that such transfer is rarely free. Finally, the work treats inference
+latency and deployability as primary goals, placing it in the area of efficient machine
+learning, where the aim is comparable quality in real time on ordinary hardware rather than a
+higher accuracy number. This matters as AI moves from offline benchmarks into live systems.
+
+\subsection{Implications, applicability, and stakeholders}
+The direct users, the biologists operating the instrument, benefit most: real-time feedback
+turns a passive recording into an interactive process and lets them correct or abandon a
+measurement before it is wasted. But a tool that is easy to run and gives reasonable results
+is also easy to over-trust, and that risk grows as it reaches users less able to judge when
+it fails. 
+
+The main risk of a generative
+model is hallucination: it can produce plausible structure that the measurement does not
+support, and it does so most in the difficult conditions where the output is hardest to
+check. If such an artefact is mistaken for real signal, it can corrupt a scientific
+conclusion or a clinical decision. Responsible use therefore relies on the safeguards
+discussed in Section~\ref{sec:limitations}: report uncertainty with the output, be clear
+about the limits of the validation, and treat anything visible only in the model output as
+something to confirm independently. The tool should be presented as a fast approximation of a
+trusted method, not as a replacement for verification.
+
+There is also an environmental cost. Training these models consumes energy, so a fair view of
+efficiency should weigh the one-time training cost against the savings over the model's
+deployed lifetime; for a model trained once and run many times, the trade is favourable.
+Reproducibility is the related obligation: because the results depend on the training data,
+that data and its assumptions must be documented and shared for others to trust and extend
+the work.
+
 \section{Limitations and Future Directions}
+\label{sec:limitations}
 
 First, all quantitative results are obtained on a synthetic microtubule dataset
 generated with the simulation pipeline from~\cite{resurf2024}. Transfer to real

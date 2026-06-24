@@ -1,37 +1,18 @@
 %% ============================================================
 \chapter{Experiments and Results}
 \label{ch:results}
-%% Target length: ~25 pages (main results chapter, formatted as manuscript)
-%% Can be structured as a self-contained paper following Nature Methods style
-%% (as Jelle did in Ch. 6), or as conventional subsections.
-%% Recommend conventional subsections for the thesis; paper can be appendix.
-% Our experiments are focused on decreasing the latency to achieve real time super resolution reconstructions
-% while maintaining the accuracy high.
-% % Sections~\ref{ssec:transformer_sizes} and \ref{ssec:N-frame Fusion}
 
-% First, we compare different sizes of TRNet fusion module in Section~\ref{ssec:transformer_sizes},
-% the effect of increasing the number of input frames into pretrained TRNet in 
-% Section~\ref{ssec:N-frame Fusion}
-
-
-% \begin{itemize}
-%   \item Decoder ablation: PixelShuffle vs. ConvTranspose2d (Section~\ref{sec:decoder_ablation})
-%   \item Loss function comparison: Fourier, L1\_Fourier (Section~\ref{sec:loss_compare})
-  
-%   \item Training set size effect analysis (Section~\ref{sec:dataset_size})
-%   \item TRNet\_improved: FlashAttention and CrossAttentionAggregator (Section~\ref{sec:improved})
-%   \item Inference speed and latency benchmarking (Section~\ref{sec:latency})
-%   \item Transformer size comparison (Section~\ref{sec:transofmer_size_compare})
-% \end{itemize}
-
-% And quantitative analysis to evaluate performance against the foundational models from RESURF \cite{resurf2024}.
-% \begin{itemize}
-%   \item Architecture comparison: TRNet vs. SOFI-MISRGRU (Section~\ref{sec:arch_compare})
-%   \item Streaming MISRGRU evaluation and deployment feasibility (Section~\ref{sec:streaming})
-% \end{itemize}
-
-
-
+This chapter evaluates the two model families introduced earlier against the central
+question of whether deep-learning models can replace SOFI for fast, live-cell imaging.
+We first assess the TR-MISR transformer: how reconstruction quality scales with the number
+of fused frames, the effect of the training frame count, and the trade-off between
+transformer size and inference latency. We then turn to MISRGRU, modifying it for video
+super-resolution through a sliding-window variant and a streaming formulation that emits one
+super-resolved frame per input, and we study how the accumulation window governs the
+quality–latency balance for continuous imaging. Throughout, models are compared using
+metrics chosen for SOFI reconstructions (Resolution Scaled Pearson correlation and Decorrelation 
+analysis). Encoder, decoder, loss-function and other hyperparameter choices are validated by
+ablation in Appendix~\ref{app:trnet_modifications}.
 
 \section{Evaluating Performance of TRMISR}
 \label{sec:arch_compare}
@@ -56,65 +37,10 @@ with 40 samples per condition (480 test samples total).
 For simplicity we often report only 4 conditions: fast and slow combined 
 with highest and lowest photon levels.
 
-\subsection{Evaluation Metrics}
-\label{ssec:metrics}
-
-Standard pixel-level metrics such as MSE, PSNR, and SSIM are poorly suited for evaluating
-super-resolution SOFI reconstructions. As noted by~\cite{jelle2024}, SOFI images are
-dominated by near-zero background pixels, so averaging errors over all pixels yields an
-overly optimistic assessment even when fine structural detail is poorly reproduced.
-We instead adopt two metrics used by~\cite{resurf2024}, enabling direct comparability.
-
-\textbf{Resolution-scaled Pearson correlation (RSP).}
-RSP measures the Pearson correlation between a predicted SR image and a reference image,
-after the SR image has been rescaled in both resolution and intensity to match the reference.
-The rescaling corrects for differences in sharpness between prediction and reference, so
-RSP reflects structural agreement rather than penalising the model for being sharper than
-the reference. RSP lies in $[-1,\,1]$; values closer to~1 indicate better structural
-fidelity. When the ground-truth SOFI image is available (simulated test set), it is used
-as the reference.
-
-% \textbf{SQUIRREL.}
-% The resolution and intensity rescaling required to compute RSP is performed by the
-% SQUIRREL algorithm~\cite{culley2018squirrel}. SQUIRREL iteratively estimates a
-% point-spread function (PSF) by convolving the SR image and comparing to the reference
-% until the convolved SR best matches the reference. In addition to the RSP score, SQUIRREL
-% produces pixel-wise RSE (resolution-scaled error) maps that visualise local deviations
-% and are useful for identifying spatial regions where the model introduces artefacts or
-% misses structure.
-
-\textbf{Decorrelation analysis\textcite{descloux2019decorrelation}} is commonly used in 
-SR microscopy to estimate spatial resolution directly from each output image without 
-requiring a ground truth.
-The normalised Fourier transform is cross-correlated with the input image through a binary
-circular mask of shrinking radius $r \in [0,1]$.
-A peak in the resulting curve $d(r)$ identifies the highest spatial frequency carrying
-coherent signal. Repeating over a series of high-pass filters and taking the maximum peak
-position $k_c$ gives the cut-off frequency, from which resolution is computed as:
-\begin{equation}
-  \text{Resolution} = \frac{2 \times \text{pixel size}}{k_c}.
-  \label{eq:decorrelation_resolution}
-\end{equation}
-This parameter-free estimate yields the achieved spatial resolution in nanometres,
-complementing the structural-fidelity measure provided by RSP.
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=0.75\linewidth]{figures/decorr_algorithm.png}
-  \caption{
-  a) Cross-correlation of the image with its normalized version after applying a Fourier filter.
-  b) Cross-correlation coefficient plotted as a function of the mask radius. 
-  c) High-pass filtering applied to the input image, followed by resolution estimation. 
-  d) Plot showing all the decorrelation functions calculated for the image along with resolution estimation. The green
-line represents the decorrelation function without high-pass filtering, while the grey lines correspond to those with high-pass
-filtering. The blue crosses indicate local maxima, and the black line highlights the decorrelation function at the highest
-frequency peak. The vertical dashed line marks the cut-off frequency kc . Scale bar: 5 µm.}
-  \label{fig:decorr_algorithm}
-\end{figure}
-
-RSP is the primary metric reported in all experiments; decorrelation analysis is reported
-only for the best models of each class. 
-
+Models are evaluated with the two metrics introduced in Section~\ref{ssec:metrics}:
+resolution-scaled Pearson correlation (RSP) for structural fidelity and decorrelation
+analysis for spatial resolution. RSP is the primary metric reported in all experiments;
+decorrelation analysis is reported only for the best models of each class.
 
 \subsection{Multi-frame Fusion}
 \label{ssec:multi-frame Fusion}
@@ -132,7 +58,7 @@ During evaluation we compared the reconstruction accuracy of using different inp
 and compare against the MISRGRU foundational models from RESURF~\cite{resurf2024}.
 
 Figure~\ref{fig:boxplot_rsp_model_comparison} shows RSP results using box plots calculated using
-480 evaluation samples, with classical SOFI (100-frame) shown in grey as an upper reference.
+480 evaluation samples, with classical SOFI (100-frame) shown in grey on the left.
 
 
 \begin{figure}[htbp]
@@ -163,8 +89,12 @@ Figure~\ref{fig:boxplot_rsp_model_comparison} shows RSP results using box plots 
 \end{figure}
 
 Providing more frames consistently improves TR-MISR: the 20-frame and 30-frame variants
-both exceed the MISRGRU 20-frame baseline in aggregate RSP shown in 
-Figure~\ref{fig:boxplot_rsp_model_comparison}.
+both exceed the MISRGRU 20-frame baseline in aggregate RSP shown in
+Figure~\ref{fig:boxplot_rsp_model_comparison}. Although the box plots overlap, the
+improvement is real rather than noise: on a matched 20-frame budget TR-MISR beats
+MISRGRU by $0.013$ RSP on average and on roughly $80\%$ of the paired samples
+(rank-biserial $-0.81$, paired Wilcoxon $p < 10^{-50}$;
+Appendix~\ref{app:significance}).
 
 This confirms that the attention mechanism generalises to sequences longer than
 those seen during training.
@@ -188,9 +118,9 @@ baseline, whereas MISRGRU 8f falls more sharply.
 %   \label{fig:n_frame_fusion}
 % \end{figure}
 
-\todo{what is interesting that at 40 frames slow lsrn trmisr has highest rsp 
-and essentially only slow conditions improve with increasing frames.. 
-dont really have an explanation any thoughts?}
+% \todo{what is interesting that at 40 frames slow lsrn trmisr has highest rsp 
+% and essentially only slow conditions improve with increasing frames.. 
+% dont really have an explanation any thoughts?}
 
 \begin{figure}[htbp]
   \centering
@@ -208,7 +138,7 @@ dim microtubules much closer to actual ground truth image.
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=1.0\linewidth]{figures/better_contrast_trmisr_visual.pdf}
+  \includegraphics[width=1.0\linewidth]{figures/better_contrast_trmisr_visual2.pdf}
   \caption{Comparison of SR reconstructions between the GT, SOFI, and TR-MISR model vs MISRGRU~\cite{resurf2024}. 
   Single diffraction-limited frame of a simulated microtubule at different fluorophores densities and SNR levels. 
   Each row represents different fluorophores densities and SNR levels of a microtubule
@@ -271,10 +201,10 @@ Figure~\ref{fig:boxplot_rsp_20fvs8f} shows the RSP distributions for both models
 Counterintuitively, the 8-frame trained model outperforms the 20-frame trained model when
 both are evaluated on 20.
 We belive that 8 frames is already sufficient to capture enough information produced by
-fluorophore blinking: at the simulated acquisition rates and blinking speeds, most
-fluorophores will have \todo{not true rewrite this paragraph} switched state at least once within 8 frames, so the cross-attention
+fluorophore blinking: at the simulated acquisition rates and blinking speeds, in 80ms time fluorophores
+that were on will have switched state to dark state least once within 8 frames, so the cross-attention
 module receives a diverse sample of blink events and can learn to aggregate efficiently.
-Training on 20 frames does not provide fundamentally new blinking statistics; it
+Training on 20 frames does not provide substantially more blinking statistics; it
 predominantly adds redundant observations of the same fluorophore states.
 
 % Second, with 20 training frames the attention module may become \emph{over-saturated} at
@@ -367,7 +297,7 @@ Looking at both, the RSP scores (Figure~\ref{fig:transformer_sizes}) and latency
 measurements (Table~\ref{tab:inference_latency}) lead to the same conclusion: the             
 transformer fusion module requires minimal capacity to achieve good results. 
 Quality does not improve substantially beyond 1h1d, however, the latency 
-grows steeply with model size.
+grows with model size.
 
 % Major limitation of TRMISR is its peak memory usage (Table~\ref{tab:memory_usage}), where 
 % for 20 frame inference requires 6.5 GB.
@@ -388,9 +318,9 @@ grows steeply with model size.
 % at any frame count (Table~\ref{tab:inference_latency}). For the real-time target ($N=8$),
 % however, the $2.6$\,GB footprint fits comfortably on commodity hardware.
 
-\section{Modifying MISRGRU to for video SR reconstruction}
+\section{Modifying MISRGRU for Video SR Reconstruction}
 
-\subsection{Sliding-window MISRGRU modification for faster inference}
+\subsection{Sliding-window MISRGRU Modification for Faster Inference}
 \label{ssec:kbuf_misrgru}
 
 Subsection~\ref{ssec:multi-frame Fusion} claimed that MISRGRU oversaturates the input into the 
@@ -482,6 +412,10 @@ section with following configuration:
 At 20 accumulated frames the streaming model already matches or slightly exceeds the
 batch MISRGRU baseline on every condition (FH/FL/SH/SL: Streaming $0.913/0.913/0.884/0.878$
 vs.\ Batch $0.911/0.901/0.875/0.858$).
+Pooled over the full test set this edge is highly consistent rather than incidental: at a
+matched 20-frame budget the streaming model wins on almost every paired sample
+(mean gain $0.010$ RSP, rank-biserial $-0.99$, paired Wilcoxon $p < 10^{-70}$;
+Appendix~\ref{app:significance}).
 With all accumulated frames from the acquisition (100 frames)
 RSP rises to $0.929/0.927/0.916/0.888$, a consistent gain over the 20-frame batch model
 that is more pronounced in the harder slow and low-SNR conditions

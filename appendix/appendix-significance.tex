@@ -1,0 +1,117 @@
+\chapter{Statistical Significance of Model Comparisons}
+\label{app:significance}
+
+This appendix reports the statistical tests behind the model comparisons in
+Section~\ref{ssec:multi-frame Fusion}. Three fusers are compared on the static
+test set: the recurrent baseline \textbf{MISRGRU}~\cite{resurf2024}, the
+transformer fuser \textbf{TR-MISR} (8-frame), and the
+\textbf{DPA} model (streaming MISRGRU with the Deformable Phase-space Alignment
+module.
+
+\section*{Procedure}
+\label{appsec:sig_method}
+
+All comparisons are paired. Every model is evaluated on the identical
+480-sample test set (12 blinking-speed $\times$ photon-level conditions,
+40 samples each), and scores are matched by condition and sample identity. For a
+pair of models $A$ and $B$ we form the per-sample differences of the
+resolution-scaled Pearson correlation score, $d_i = \mathrm{RSP}^A_i - \mathrm{RSP}^B_i$, and
+test the null hypothesis that their median is zero.
+
+Because RSP is bounded in $[-1,1]$ and not normally distributed, the primary test
+is the two-sided \textbf{Wilcoxon signed-rank test}. When several pairs are
+compared within one family of conditions, the $p$-values are adjusted for
+multiple comparisons with the \textbf{Holm--Bonferroni} method, and
+significance is declared at an adjusted level of $\alpha = 0.05$.
+
+We also show the \textbf{mean RSP difference}
+$\overline{d}$, and
+the \textbf{matched-pairs rank-biserial correlation} $r \in [-1, +1]$ measures how
+consistently one model wins ($r = +1$ means $A$ beats $B$ on every sample,
+$r = 0$ means wins and losses balance). Because the sample sizes are large
+($n = 40$ per condition, $n = 480$ pooled), the $p$-values are extremely small and
+several saturate the exact-test floor; interpretation therefore relies on the
+effect sizes rather than on the $p$-values themselves.
+
+\section*{Three-model comparison at a 20-frame budget}
+\label{appsec:sig_20f}
+
+At a matched budget of 20 input frames we compare all three models pooled over
+the full test set ($n = 480$).
+
+\begin{table}[htbp]
+  \centering
+  \caption{Paired comparison of the three fusers at a 20-frame budget, pooled over
+           all 480 test samples. $\overline{d}$ is the mean RSP difference
+           (A\,$-$\,B); $p$ is Holm-adjusted Wilcoxon. Higher RSP is better.}
+  \label{tab:sig_20f}
+  \begin{tabular}{lccccc}
+    \toprule
+    \textbf{Comparison (A vs.\ B)} & \textbf{mean A} & \textbf{mean B} &
+    $\overline{d}$ & \textbf{better} & \textbf{rank-biserial} \\
+    \midrule
+    MISRGRU vs.\ TR-MISR & 0.8895 & 0.9025 & $-0.0129$ & TR-MISR & $-0.81$ \\
+    MISRGRU vs.\ DPA     & 0.8895 & 0.9024 & $-0.0128$ & DPA     & $-0.86$ \\
+    TR-MISR vs.\ DPA     & 0.9025 & 0.9024 & $+0.0001$ & - & $-0.06$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Both TR-MISR and DPA significantly outperform the MISRGRU baseline
+($p \approx 3.1\times10^{-52}$ and $8.2\times10^{-60}$ respectively), with large
+and highly consistent effects (rank-biserial $\approx -0.8$; MISRGRU loses on the
+large majority of samples). The final streaming MISRGRU
+(Section~\ref{sec:streaming}) was evaluated with the same paired procedure and
+likewise beats the batch MISRGRU baseline at a matched 20-frame budget
+($\overline{d} = 0.010$ RSP in its favour, rank-biserial $-0.99$,
+$p \approx 6\times10^{-78}$). It wins on almost every paired sample. In contrast, TR-MISR and DPA are
+statistically indistinguishable in aggregate: the mean difference is
+$+0.0001$ RSP and the Wilcoxon test is not significant ($p = 0.24$).
+
+This aggregate tie is misleading. When we compare the models per imaging setting it
+reveals a clean difference: DPA is significantly better in the fast-blinking /
+high-SNR conditions ($\overline{d}$ from $-0.015$ to $-0.024$ in favour of DPA),
+whereas TR-MISR is significantly better in the slow-blinking / low-SNR
+conditions, its advantage growing as the signal weakens (up to $+0.040$ RSP at
+the hardest 12\_slow\_p40 condition). 
+
+\section*{DPA vs.\ TR-MISR at a 30-frame budget}
+\label{appsec:sig_30f}
+
+Increasing the number of input frames to 30 frames for both models confirms the same
+pattern. Pooled over all conditions ($n = 480$), DPA holds a small but significant
+edge ($\overline{d} = -0.0034$ RSP, $p = 2.9\times10^{-6}$, rank-biserial
+$-0.25$), a tie that hides a tradeoff.
+
+\begin{table}[htbp]
+  \centering
+  \caption{DPA vs.\ TR-MISR at a 30-frame budget, grouped by blinking speed.
+           $\overline{d}$ is the mean RSP difference (TR-MISR\,$-$\,DPA);
+           $\star$ marks Holm-adjusted Wilcoxon $p < 0.05$.}
+  \label{tab:sig_30f}
+  \begin{tabular}{lcccc}
+    \toprule
+    \textbf{Condition group} & $\overline{d}$ \textbf{(TR-MISR\,$-$\,DPA)} &
+    \textbf{better} & \textbf{rank-biserial} & \textbf{sig} \\
+    \midrule
+    fast (p100--p40)   & $-0.019$ to $-0.023$ & DPA     & $-1.00$            & $\star$ \\
+    medium (p100--p60) & $-0.006$ to $-0.012$ & DPA     & $-0.99$ / $-1.00$  & $\star$ \\
+    medium p40         & $+0.001$             & --- (n.s.) & $+0.30$          &         \\
+    slow (p100--p40)   & $+0.008$ to $+0.032$ & TR-MISR & $+1.00$            & $\star$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The sign of the difference flips monotonically with blinking speed: under fast
+blinking DPA wins every sample (rank-biserial $=-1.0$), the medium conditions form
+the crossover region, and under slow blinking TR-MISR wins every sample, with its
+margin increasing as the photon count drops (up to $+0.032$ RSP at
+12\_slow\_p40). The photon level does not change which model wins but modulates the
+size of the gap.
+
+In summary, at equal frame budgets both fusers clearly beat the recurrent MISRGRU
+baseline, but neither dominates the other: DPA is the stronger model under
+fast-blinking / high-SNR conditions, TR-MISR under slow-blinking / low-SNR
+conditions, the two crossing over in the medium regime. Because these opposing
+effects cancel when conditions are pooled, the comparison is only meaningful when
+stratified.

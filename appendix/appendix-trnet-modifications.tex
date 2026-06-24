@@ -1,28 +1,95 @@
 \chapter{TRNet Architecture and Training Ablations}
 \label{app:trnet_modifications}
 
-This appendix reports the ablation experiments that informed the choice of decoder and
-loss function used in all main-chapter TR-MISR experiments
+This appendix reports the ablation experiments that informed the encoder, decoder and
+loss-function choices used in all main-chapter TR-MISR experiments
 (Section~\ref{ssec:experimental_setup}).
-Two design choices were evaluated independently against the chosen baseline:
-First, replacing the PixelShuffle decoder with a transposed-convolution (deconvolution) decoder,
-and secondly, replacing the combined L1+Fourier loss with the Fourier-only loss.
+Three design choices were evaluated independently against the chosen baseline:
+First, feeding the encoder a single fluorescence channel versus concatenating an averaged
+reference image as a second channel (Section~\ref{sec:adaptation});
+secondly, replacing the PixelShuffle decoder with a transposed-convolution (deconvolution) decoder;
+and thirdly, replacing the combined L1+Fourier loss with the Fourier-only loss.
 All other hyperparameters are held fixed at the values described in
 Section~\ref{ssec:experimental_setup}.
+
+%% -------------------------------------------------------
+\section{Encoder: Single-channel vs.\ Added Averaged Reference Image}
+\label{app:encoder_ablation}
+
+The original TR-MISR encoder takes a two-channel input, concatenating each
+low-resolution frame with a reference image that acts as an implicit
+co-registration anchor~\cite{TR-MISR-original}. As argued in
+Section~\ref{sec:adaptation}, in SOFI the frame stack is co-registered by
+construction, so this reference is expected to be redundant. This ablation tests
+that claim empirically by comparing two otherwise identical 1-head, 1-depth, 
+TR-MISR models evaluated at a 20-frame budget:
+the chosen single-channel model, and a two-channel variant whose second channel
+is the per-stack averaged reference image. We chose average over median as the background 
+noise  will get averaged out and only the diffraction limited structure remains.
+
+The comparison is paired: both models are evaluated on the identical 480-sample
+test set and scores are matched by condition and sample identity. Following the
+procedure in Appendix~\ref{app:significance}, we report the mean
+resolution-scaled Pearson (RSP) difference $\overline{d}$, the two-sided
+Wilcoxon signed-rank $p$-value, and the matched-pairs rank-biserial correlation.
+
+% \begin{table}[htbp]
+%   \centering
+%   \caption{RSP per SNR condition for the single-channel and averaged-reference
+%            encoders at a 20-frame budget. $\overline{d}$ is the mean RSP
+%            difference (single\,$-$\,avg.\ ref.); all rows are significant under
+%            the paired Wilcoxon test (per-condition $p = 1.8\times10^{-12}$,
+%            rank-biserial $=-1.00$, i.e.\ the single-channel model wins on every
+%            one of the 40 samples). Bold marks the better value per row.}
+%   \label{tab:ablation_encoder}
+%   \begin{tabular}{lccc}
+%     \toprule
+%     \textbf{Condition} & \textbf{Single channel} & \textbf{Avg.\ reference} & $\overline{d}$ \\
+%     \midrule
+%     01 fast p100   & \textbf{0.9048} & 0.8978 & $+0.0070$ \\
+%     02 fast p80    & \textbf{0.9048} & 0.8979 & $+0.0069$ \\
+%     03 fast p60    & \textbf{0.9100} & 0.9016 & $+0.0084$ \\
+%     04 fast p40    & \textbf{0.9079} & 0.8968 & $+0.0111$ \\
+%     \midrule
+%     05 medium p100 & \textbf{0.9033} & 0.8867 & $+0.0166$ \\
+%     06 medium p80  & \textbf{0.9066} & 0.8887 & $+0.0178$ \\
+%     07 medium p60  & \textbf{0.9056} & 0.8838 & $+0.0218$ \\
+%     08 medium p40  & \textbf{0.9103} & 0.8839 & $+0.0264$ \\
+%     \midrule
+%     09 slow p100   & \textbf{0.8952} & 0.8558 & $+0.0394$ \\
+%     10 slow p80    & \textbf{0.8939} & 0.8497 & $+0.0442$ \\
+%     11 slow p60    & \textbf{0.9000} & 0.8494 & $+0.0506$ \\
+%     12 slow p40    & \textbf{0.8871} & 0.8188 & $+0.0684$ \\
+%     \midrule
+%     \textbf{Aggregate} & \textbf{0.9025} & 0.8759 & $+0.0266$ \\
+%     \bottomrule
+%   \end{tabular}
+% \end{table}
+
+The single-channel encoder is significantly better in every condition and on
+every paired sample. Pooled over all 480 samples it gains $\overline{d} = +0.0266$
+RSP ($p \approx 2.3\times10^{-80}$, rank-biserial $=-1.00$). The margin grows monotonically
+as the imaging conditions worsen, from $+0.007$ RSP at the easiest fast/high-photon
+setting to $+0.068$ RSP at the hardest 12\_slow\_p40 condition. Concatenating an
+averaged reference image therefore does not help and actively hurts: the reference
+adds a redundant, low-fluctuation channel that dilutes the blinking statistics the
+fusion relies on, with the largest cost precisely where the fluctuation signal is
+weakest. This confirms the design choice of a single-channel encoder
+(Section~\ref{sec:adaptation}).
 
 %% -------------------------------------------------------
 \section{Decoder: PixelShuffle vs.\ Transposed Convolution}
 \label{app:decoder_ablation}
 
-The SOFI super-resolution task requires upscaling LR from $K \times K$ to HR result of size 
-$2*K-7 \times 2*K-7$.
+The SOFI super-resolution task requires upscaling LR from $N \times N$ to HR result of size 
+$2*N-7 \times 2*N-7$.
 Two standard decoder approaches were compared:
 
 \begin{itemize}
   \item \textbf{PixelShuffle} (sub-pixel convolution~\cite{shi2016pixelshuffle}):
    Originaly used in the TR-MISR paper~cite\cite{TR-MISR-original}. It learns
     to rearrange channel dimensions into spatial resolution. The non-integer scale is handled
-    by upsampling to an intermediate size followed by a centre crop to match the $2K-7$.
+    by upsampling to an intermediate size followed by a centre crop to match the $2N-7$.
   \item \textbf{Transposed convolution} (\texttt{ConvTranspose2d}): Is used in MISRGRU models from 
   RESURF~\cite{resurf2024} learned upsampling via
     strided deconvolution. Known to produce checkerboard artefacts when the kernel size is

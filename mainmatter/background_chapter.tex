@@ -221,7 +221,7 @@ SOFI~\cite{sofi2009}       & $\approx\!{n}$-fold with postprocessing  & 100--200
 Deep learning approaches for image super-resolution replace explicit mathematical models 
 with learnable functions that are trained to map low-resolution frames to high-resolution target. 
 
-\section{Problem Formulation}
+\subsubsection{Problem Formulation}
 \label{sec:problem}
 %% Multi-image SR for SOFI:
 %% \hat{Y} = f^γ_{θ,α,β}({l_1, ..., l_N})
@@ -670,9 +670,68 @@ The coefficients are obtained via the 2D real-valued FFT:
 \end{equation}
 where the $1/\sqrt{HW}$ prefactor reflects the orthonormal convention.
 
-Following the RESURF paper~\cite{resurf2024}, which demonstrated strong 
-reconstruction quality with fourier domain loss, we train our models with 
+Following the RESURF paper~\cite{resurf2024}, which demonstrated strong
+reconstruction quality with fourier domain loss, we train our models with
 the fourier loss and a combined $\ell_1$+Fourier loss.
-Our primary focus is on comparing the Transformer and GRU fusion modules, 
+Our primary focus is on comparing the Transformer and GRU fusion modules,
 so we adopt these two loss functions from the paper.
+
+\subsection{Evaluation Metrics}
+\label{ssec:metrics}
+
+Standard pixel-level metrics such as MSE, PSNR, and SSIM are poorly suited for evaluating
+super-resolution SOFI reconstructions. As noted by~\cite{jelle2024}, SOFI images are
+dominated by near-zero background pixels, so averaging errors over all pixels yields an
+overly optimistic assessment even when fine structural detail is poorly reproduced.
+We instead adopt two metrics used by~\cite{resurf2024}, enabling direct comparability.
+
+\textbf{Resolution-scaled Pearson correlation (RSP).}
+RSP measures the Pearson correlation between a predicted SR image and a reference image,
+after the SR image has been rescaled in both resolution and intensity to match the reference.
+The rescaling corrects for differences in sharpness between prediction and reference, so
+RSP reflects structural agreement rather than penalising the model for being sharper than
+the reference. RSP lies in $[-1,\,1]$; values closer to~1 indicate better structural
+fidelity. When the ground-truth SOFI image is available (simulated test set), it is used
+as the reference.
+
+% \textbf{SQUIRREL.}
+% The resolution and intensity rescaling required to compute RSP is performed by the
+% SQUIRREL algorithm~\cite{culley2018squirrel}. SQUIRREL iteratively estimates a
+% point-spread function (PSF) by convolving the SR image and comparing to the reference
+% until the convolved SR best matches the reference. In addition to the RSP score, SQUIRREL
+% produces pixel-wise RSE (resolution-scaled error) maps that visualise local deviations
+% and are useful for identifying spatial regions where the model introduces artefacts or
+% misses structure.
+
+\textbf{Decorrelation analysis\textcite{descloux2019decorrelation}} is commonly used in
+SR microscopy to estimate spatial resolution directly from each output image without
+requiring a ground truth.
+The normalised Fourier transform is cross-correlated with the input image through a binary
+circular mask of shrinking radius $r \in [0,1]$.
+A peak in the resulting curve $d(r)$ identifies the highest spatial frequency carrying
+coherent signal. Repeating over a series of high-pass filters and taking the maximum peak
+position $k_c$ gives the cut-off frequency, from which resolution is computed as:
+\begin{equation}
+  \text{Resolution} = \frac{2 \times \text{pixel size}}{k_c}.
+  \label{eq:decorrelation_resolution}
+\end{equation}
+This parameter-free estimate yields the achieved spatial resolution in nanometres,
+complementing the structural-fidelity measure provided by RSP.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.75\linewidth]{figures/decorr_algorithm.png}
+  \caption{
+  a) Cross-correlation of the image with its normalized version after applying a Fourier filter.
+  b) Cross-correlation coefficient plotted as a function of the mask radius.
+  c) High-pass filtering applied to the input image, followed by resolution estimation.
+  d) Plot showing all the decorrelation functions calculated for the image along with resolution estimation. The green
+line represents the decorrelation function without high-pass filtering, while the grey lines correspond to those with high-pass
+filtering. The blue crosses indicate local maxima, and the black line highlights the decorrelation function at the highest
+frequency peak. The vertical dashed line marks the cut-off frequency kc . Scale bar: 5 µm.}
+  \label{fig:decorr_algorithm}
+\end{figure}
+
+RSP is the primary metric reported in all experiments; decorrelation analysis is reported
+only for the best models of each class.
 
